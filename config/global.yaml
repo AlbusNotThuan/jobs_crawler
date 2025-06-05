@@ -1,0 +1,12 @@
+# Global Job Crawler Configuration
+# This file defines all implemented job sites and their configurations
+
+sites:
+  itviec:
+    name: "ITviec"
+    description: "Vietnamese IT job platform"
+    config_file: "config/itviec_config.yaml"
+    crawler_module: "itviecCrawler"
+    crawler_function: "crawl_itviec"
+    enabled: true
+

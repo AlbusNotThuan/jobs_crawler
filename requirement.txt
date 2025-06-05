@@ -2,3 +2,4 @@ patchright
 pandas
 ipynb
 ipykernel
+PyYAML

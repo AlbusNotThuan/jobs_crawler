@@ -1,26 +1,34 @@
 from patchright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 import pandas as pd
 import time
-import datetime
+from datetime import datetime
+import hashlib
 
-def crawl_itviec():
-    BASE_URL = "https://itviec.com" # Base for constructing full URLs
-    START_URL = f"{BASE_URL}/it-jobs"
+def generate_job_hash(title, company):
+    """Generate a hash for a job based on title and company for deduplication."""
+    # Create a consistent string from title and company
+    job_string = f"{title.lower().strip()}|{company.lower().strip()}"
+    # Create a hash of the string
+    job_hash = hashlib.sha256(job_string.encode('utf-8')).hexdigest()
+    return job_hash
+
+def crawl_itviec(config):
+    START_URL = f"{config['BASE_URL']}/it-jobs"
 
     with sync_playwright() as p:
         browser = p.chromium.launch_persistent_context(
-            user_data_dir=r"C:\\playwright_user_data_itviec_vanilla", # Using a specific path
+            user_data_dir=config["USER_DATA_DIR"],
             channel="chrome",
-            headless=False, # Set to True for non-UI runs later
+            headless=False,
             no_viewport=True,
         )
         
         main_page = browser.new_page()
         try:
             print(f"Navigating to initial page: {START_URL}")
-            main_page.goto(START_URL, timeout=60000)
+            main_page.goto(START_URL, timeout=config["PAGE_LOAD_TIMEOUT"])
             # Wait for the job card container, which implies job cards are likely present
-            main_page.wait_for_selector(".card-jobs-list .job-card", timeout=30000, state="visible") 
+            main_page.wait_for_selector(config["JOB_CARD_SELECTOR"], timeout=config["SELECTOR_TIMEOUT"], state="visible") 
         except Exception as e:
             print(f"Error loading main page or finding initial job items: {e}")
             main_page.screenshot(path="error_initial_load.png")
@@ -28,22 +36,22 @@ def crawl_itviec():
             return pd.DataFrame()
 
         job_data = []
+        seen_hashes = set()  # Track job hashes for deduplication
         current_page_num = 1
-        max_pages_to_crawl = 100 # Safety limit for pages, adjust as needed (e.g., 2 or 3 for quick tests)
 
-        while current_page_num <= max_pages_to_crawl:
+        while True:  # Changed to crawl until no more pagination is found
             print(f"Crawling search results page {current_page_num}...")
             try:
-                main_page.wait_for_selector(".card-jobs-list .job-card", timeout=30000, state="visible")
-                main_page.wait_for_load_state("domcontentloaded", timeout=30000)
+                main_page.wait_for_selector(config["JOB_CARD_SELECTOR"], timeout=config["SELECTOR_TIMEOUT"], state="visible")
+                main_page.wait_for_load_state("domcontentloaded", timeout=config["SELECTOR_TIMEOUT"])
                 # A short sleep can help ensure all dynamic elements on the list page render
-                time.sleep(2) 
+                time.sleep(config["PAGE_SLEEP_DURATION"]) 
             except Exception as e:
                 print(f"Error waiting for content on page {current_page_num}: {e}")
                 main_page.screenshot(path=f"error_page_{current_page_num}_load.png")
                 break 
 
-            job_elements_locators = main_page.locator(".card-jobs-list .job-card")
+            job_elements_locators = main_page.locator(config["JOB_CARD_SELECTOR"])
             count_on_page = job_elements_locators.count()
             print(f"Found {count_on_page} job cards on page {current_page_num}.")
 
@@ -68,9 +76,20 @@ def crawl_itviec():
                     location_element = job_element.locator("div.text-rich-grey.text-truncate[title]")
                     location = location_element.get_attribute("title").strip() if location_element.count() > 0 and location_element.get_attribute("title") else "Not specified"
                     
+                    # Generate hash for this job for deduplication
+                    job_hash = generate_job_hash(title, company)
+                    
+                    # Skip if we've already seen this job (deduplication)
+                    if job_hash in seen_hashes:
+                        print(f"  Skipping duplicate: {title} | {company}")
+                        continue
+                    
+                    seen_hashes.add(job_hash)
+                    
                     print(f"  Collected: {title} | {company} | {location} | {job_page_url}")
 
                     job_data.append({
+                        "Hash": job_hash,
                         "Title": title,
                         "Company": company,
                         "Location": location,
@@ -85,15 +104,21 @@ def crawl_itviec():
 
             # --- Pagination ---
             print(f"Checking for next page link from page {current_page_num}...")
-            next_page_locator = main_page.locator("div.page.next > a[rel='next']")
+            next_page_locator = main_page.locator(config["NEXT_PAGE_SELECTOR"])
             
+            # Check if we've reached the page limit (if one is set)
+            if config['PAGE_LIMIT'] != 'none' and current_page_num == config['PAGE_LIMIT']:
+                print(f"Reached page limit ({config['PAGE_LIMIT']}). Ending crawl.")
+                break
+            
+            # Continue to next page if available
             if next_page_locator.count() > 0 and next_page_locator.is_visible():
                 next_page_href = next_page_locator.get_attribute("href")
                 if next_page_href:
-                    next_page_url_full = f"{BASE_URL}{next_page_href}" if next_page_href.startswith("/") else next_page_href
+                    next_page_url_full = f"{config['BASE_URL']}{next_page_href}" if next_page_href.startswith("/") else next_page_href
                     
                     print(f"Navigating to next page: {next_page_url_full}")
-                    main_page.goto(next_page_url_full, timeout=60000)
+                    main_page.goto(next_page_url_full, timeout=config["NAVIGATION_TIMEOUT"])
                     current_page_num += 1
                 else:
                     print("Next page link found but 'href' attribute is missing. Ending crawl.")
@@ -117,10 +142,13 @@ def crawl_itviec():
         print(f"\nSuccessfully crawled {len(df)} job summaries from {actual_pages_crawled} page(s).")
     return df
 
-if __name__ == '__main__':
+if __name__ == '__main__':  
+    time_now = datetime.now().strftime("%Y-%m-%d")
+    print(f"Current time: {time_now}")
+    print("This script will crawl ITviec job listings and save the summaries to a CSV file.")
     print("Starting ITviec crawler script (Vanilla - Search Pages Only)...")
     crawled_data_df = crawl_itviec()
-    time_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+   
     
     if not crawled_data_df.empty:
         print("\n--- Sample of Crawled Job Summaries (First 5 Rows) ---")
