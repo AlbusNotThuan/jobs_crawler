@@ -121,11 +121,11 @@ class JobCrawlerManager:
             return ""
         
         timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-        
+        folder_prefix = os.path.join(os.path.dirname(__file__), 'output')
         if output_file:
-            filename = output_file
+            filename = f"{folder_prefix}/{output_file}"
         else:
-            filename = f"{timestamp}_{site}_jobs.csv"
+            filename = f"{folder_prefix}/{timestamp}_{site}_jobs.csv"
         
         try:
             df.to_csv(filename, index=False, encoding='utf-8-sig')

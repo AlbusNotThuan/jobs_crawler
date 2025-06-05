@@ -1,5 +1,6 @@
-IT Jobs in Viet Nam _ ITviec_files/*
-IT Jobs in Viet Nam _ ITviec.htm
-.csv
+*.htm
+*.html
+*.csv
 playwright_user_data/
 __pycache__/
+output/ 
