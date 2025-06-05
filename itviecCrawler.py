@@ -1,6 +1,7 @@
 from patchright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 import pandas as pd
 import time
+import datetime
 
 def crawl_itviec():
     BASE_URL = "https://itviec.com" # Base for constructing full URLs
@@ -28,7 +29,7 @@ def crawl_itviec():
 
         job_data = []
         current_page_num = 1
-        max_pages_to_crawl = 5 # Safety limit for pages, adjust as needed (e.g., 2 or 3 for quick tests)
+        max_pages_to_crawl = 100 # Safety limit for pages, adjust as needed (e.g., 2 or 3 for quick tests)
 
         while current_page_num <= max_pages_to_crawl:
             print(f"Crawling search results page {current_page_num}...")
@@ -119,13 +120,14 @@ def crawl_itviec():
 if __name__ == '__main__':
     print("Starting ITviec crawler script (Vanilla - Search Pages Only)...")
     crawled_data_df = crawl_itviec()
+    time_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     if not crawled_data_df.empty:
         print("\n--- Sample of Crawled Job Summaries (First 5 Rows) ---")
         print(crawled_data_df.head())
         
         try:
-            csv_file_path = "itviec_jobs_summary.csv"
+            csv_file_path = f"{time_now}itviec_jobs_summary.csv"
             crawled_data_df.to_csv(csv_file_path, index=False, encoding='utf-8-sig')
             print(f"\nSummary data saved to {csv_file_path}")
         except Exception as e:

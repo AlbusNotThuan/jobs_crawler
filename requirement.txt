@@ -1,2 +1,4 @@
 patchright
 pandas
+ipynb
+ipykernel
