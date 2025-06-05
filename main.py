@@ -122,8 +122,10 @@ class JobCrawlerManager:
         
         timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
         folder_prefix = os.path.join(os.path.dirname(__file__), 'output')
+
+        os.makedirs(folder_prefix, exist_ok=True)
         if output_file:
-            filename = f"{folder_prefix}/{output_file}"
+            filename = f"{folder_prefix}/{output_file}" 
         else:
             filename = f"{folder_prefix}/{timestamp}_{site}_jobs.csv"
         
