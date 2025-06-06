@@ -5,15 +5,17 @@ from datetime import datetime
 import hashlib
 
 def generate_job_hash(title, company):
-    """Generate a hash for a job based on title and company for deduplication."""
-    # Create a consistent string from title and company
+    """Generate a unique hash for a job based on title and company."""
     job_string = f"{title.lower().strip()}|{company.lower().strip()}"
-    # Create a hash of the string
     job_hash = hashlib.sha256(job_string.encode('utf-8')).hexdigest()
     return job_hash
 
 def crawl_itviec(config):
-    # Hardcoded selectors for ITviec
+    """
+    Crawls job listings from ITviec, including detail pages for each job,
+    and handles pagination.
+    """
+    # Selectors are defined here for clarity
     JOB_CARD_SELECTOR = ".card-jobs-list .job-card"
     NEXT_PAGE_SELECTOR = "div.page.next > a[rel='next']"
     
@@ -23,7 +25,7 @@ def crawl_itviec(config):
         browser = p.chromium.launch_persistent_context(
             user_data_dir=config["USER_DATA_DIR"],
             channel="chrome",
-            headless=False,
+            headless=config["HEADLESS"],
             no_viewport=True,
         )
 
@@ -31,7 +33,6 @@ def crawl_itviec(config):
         try:
             print(f"Navigating to initial page: {START_URL}")
             main_page.goto(START_URL, timeout=config["PAGE_LOAD_TIMEOUT"])
-            # Wait for the job card container, which implies job cards are likely present
             main_page.wait_for_selector(JOB_CARD_SELECTOR, timeout=config["SELECTOR_TIMEOUT"], state="visible") 
         except Exception as e:
             print(f"Error loading main page or finding initial job items: {e}")
@@ -39,22 +40,18 @@ def crawl_itviec(config):
             browser.close()
             return pd.DataFrame()
 
-        if config['SIGN_IN_FLAG'] == False:
-            print("Please sign in to your ITviec account manually before proceeding.")
-            print("You have 30 seconds to sign in...")
-            time.sleep(30000)
-
-
         job_data = []
-        seen_hashes = set()  # Track job hashes for deduplication
+        seen_hashes = set()
         current_page_num = 1
 
-        while True:  # Changed to crawl until no more pagination is found
+        while True:
+            if config['PAGE_LIMIT'] != 0 and current_page_num > config['PAGE_LIMIT']:
+                print(f"Reached page limit ({config['PAGE_LIMIT']}). Ending crawl.")
+                break
+
             print(f"Crawling search results page {current_page_num}...")
             try:
                 main_page.wait_for_selector(JOB_CARD_SELECTOR, timeout=config["SELECTOR_TIMEOUT"], state="visible")
-                main_page.wait_for_load_state("domcontentloaded", timeout=config["SELECTOR_TIMEOUT"])
-                # A short sleep can help ensure all dynamic elements on the list page render
                 time.sleep(config["PAGE_SLEEP_DURATION"]) 
             except Exception as e:
                 print(f"Error waiting for content on page {current_page_num}: {e}")
@@ -66,7 +63,7 @@ def crawl_itviec(config):
             print(f"Found {count_on_page} job cards on page {current_page_num}.")
 
             if count_on_page == 0:
-                print(f"No job cards found on page {current_page_num}. This might be the end or an issue.")
+                print("No more job cards found. Ending crawl.")
                 break
 
             for i in range(count_on_page):
@@ -75,103 +72,129 @@ def crawl_itviec(config):
                     title_element = job_element.locator("h3[data-search--job-selection-target='jobTitle']")
                     title = title_element.inner_text().strip() if title_element.count() > 0 else "Not specified"
                     
-                    job_page_url_raw = title_element.get_attribute("data-url") if title_element.count() > 0 else None
-                    job_page_url = "Not specified"
-                    if job_page_url_raw:
-                        job_page_url = job_page_url_raw.split("?")[0] # Clean tracking params
-
                     company_element = job_element.locator("span.ims-2 a.text-rich-grey")
                     company = company_element.inner_text().strip() if company_element.count() > 0 else "Not specified"
 
-                    location_element = job_element.locator("div.text-rich-grey.text-truncate[title]")
-                    location = location_element.get_attribute("title").strip() if location_element.count() > 0 and location_element.get_attribute("title") else "Not specified"
+                    job_hash = generate_job_hash(title, company)
+                    if job_hash in seen_hashes:
+                        print(f"  Skipping duplicate: {title} | {company}")
+                        continue
+                    seen_hashes.add(job_hash)
                     
-                    # # Generate hash for this job for deduplication
-                    # job_hash = generate_job_hash(title, company)
+                    job_page_url_raw = title_element.get_attribute("data-url") if title_element.count() > 0 else None
+                    if not job_page_url_raw:
+                        print(f"  Skipping job '{title}' due to missing link.")
+                        continue
+                    job_page_url = job_page_url_raw.split("?")[0]
                     
-                    # # Skip if we've already seen this job (deduplication)
-                    # if job_hash in seen_hashes:
-                    #     print(f"  Skipping duplicate: {title} | {company}")
-                    #     continue
-                    
-                    # seen_hashes.add(job_hash)
+                    print(f"  Processing job {i+1}/{count_on_page}: {title}")
 
-                    # Visit the job detail page to collect more data
-               
-
-
+                    # --- Scrape Job Detail Page ---
+                    job_detail_page = browser.new_page()
+                    description, experience, benefits, skills, salary, location = ("Not specified",) * 6
                     
-                    print(f"  Collected: {title} | {company} | {location} | {job_page_url}")
+                    try:
+                        job_detail_page.goto(job_page_url, timeout=config["NAVIGATION_TIMEOUT"])
+                        job_detail_page.wait_for_load_state('domcontentloaded')
+                        time.sleep(config["PAGE_SLEEP_DURATION"])
+
+                        salary_locator = job_detail_page.locator(".salary .fw-500")
+                        salary = salary_locator.inner_text().strip() # if salary_locator.count() > 0 else "Not specified"
+                        print(f"    - Salary: {salary}")
+                        
+                        location_locator = job_detail_page.locator("div.d-inline-block:has(svg.feather-icon.icon-sm.align-middle) > span.normal-text.text-rich-grey")
+                        location = location_locator.inner_text().strip() if location_locator.count() > 0 else "Not specified"
+                        
+                        # Find the div containing "Skills:" and get the tags from the next sibling div
+                        skills_container = job_detail_page.locator("div.d-flex.flex-wrap.igap-2:near(div:has-text('Skills:'))")
+                        skills_tags = skills_container.locator("a.itag")
+                        skills = [tag.inner_text().strip() for tag in skills_tags.all() if tag.inner_text().strip()] if skills_container.count() > 0 else []
+
+                        # Scrape the main text content sections
+                        description_locator = job_detail_page.locator("div.paragraph:has(h2:has-text('Job description'))")
+                        description = description_locator.inner_text().strip() if description_locator.count() > 0 else "Not specified"
+
+                        experience_locator = job_detail_page.locator("div.paragraph:has(h2:has-text('Your skills and experience'))")
+                        experience = experience_locator.inner_text().strip() if experience_locator.count() > 0 else "Not specified"
+
+                        benefits_locator = job_detail_page.locator("div.paragraph:has(h2:has-text('Why you`ll love working here'))")
+                        benefits = benefits_locator.inner_text().strip() if benefits_locator.count() > 0 else "Not specified"
+
+                    except Exception as e_detail:
+                        print(f"    - Error processing detail page {job_page_url}: {e_detail}")
+                        job_detail_page.screenshot(path=f"error_detail_page_{current_page_num}_{i+1}.png")
+                    finally:
+                        job_detail_page.close()
 
                     job_data.append({
                         "Title": title,
                         "Company": company,
+                        "Salary": salary,
                         "Location": location,
-                        "Description": "Not specified (detail page not visited)", # Placeholder
-                        "Skills": "Not specified (detail page not visited)",      # Placeholder
+                        "Skills": ", ".join(skills) if skills else "Not specified",
+                        "Benefits": benefits,
+                        "Description": description,
+                        "Experience_Requirements": experience,
                         "Link": job_page_url
                     })
                     
                 except Exception as e_job_item:
-                    print(f"  Error processing one job card on page {current_page_num}, index {i+1}: {e_job_item}")
-                    # Continue to the next job card on the current page
+                    print(f"  - Error processing a job card on page {current_page_num}, index {i+1}: {e_job_item}")
 
             # --- Pagination ---
-            print(f"Checking for next page link from page {current_page_num}...")
+            print(f"\nChecking for next page link...")
             next_page_locator = main_page.locator(NEXT_PAGE_SELECTOR)
             
-            # Check if we've reached the page limit (if one is set)
-            if config['PAGE_LIMIT'] != 'none' and current_page_num == config['PAGE_LIMIT']:
-                print(f"Reached page limit ({config['PAGE_LIMIT']}). Ending crawl.")
-                break
-            
-            # Continue to next page if available
             if next_page_locator.count() > 0 and next_page_locator.is_visible():
                 next_page_href = next_page_locator.get_attribute("href")
                 if next_page_href:
-                    next_page_url_full = f"{config['BASE_URL']}{next_page_href}" if next_page_href.startswith("/") else next_page_href
-                    
+                    next_page_url_full = f"{config['BASE_URL']}{next_page_href}"
                     print(f"Navigating to next page: {next_page_url_full}")
                     main_page.goto(next_page_url_full, timeout=config["NAVIGATION_TIMEOUT"])
                     current_page_num += 1
                 else:
-                    print("Next page link found but 'href' attribute is missing. Ending crawl.")
+                    print("Next page link found but 'href' is missing. Ending crawl.")
                     break
             else:
-                print("No 'Next page' link found or it's not visible. Ending crawl.")
+                print("No 'Next page' link found. Ending crawl.")
                 break
         
         browser.close()
 
     df = pd.DataFrame(job_data)
     if df.empty:
-        print("No job data was successfully crawled.")
+        print("\nNo job data was successfully crawled.")
     else:
-        # Adjust page count display logic slightly for accuracy if loop breaks early
-        actual_pages_crawled = current_page_num -1 if count_on_page > 0 or current_page_num > 1 else 0
-        if count_on_page == 0 and current_page_num == 1 and not job_data : actual_pages_crawled = 0 # No jobs on first page
-        elif count_on_page == 0 and current_page_num >1 : actual_pages_crawled = current_page_num -1
-        elif job_data: actual_pages_crawled = current_page_num # If loop completed max_pages or broke after processing last page
-
-        print(f"\nSuccessfully crawled {len(df)} job summaries from {actual_pages_crawled} page(s).")
+        print(f"\nSuccessfully crawled {len(df)} unique jobs from {current_page_num -1} page(s).")
     return df
 
-if __name__ == '__main__':  
-    time_now = datetime.now().strftime("%Y-%m-%d")
-    print(f"Current time: {time_now}")
-    print("This script will crawl ITviec job listings and save the summaries to a CSV file.")
-    print("Starting ITviec crawler script (Vanilla - Search Pages Only)...")
-    crawled_data_df = crawl_itviec()
-   
+if __name__ == '__main__':
+    # Configuration dictionary to make the script easy to manage
+    config = {
+        "BASE_URL": "https://itviec.com",
+        "USER_DATA_DIR": "./playwright_user_data",
+        "HEADLESS": False, # Set to True for production/unattended runs
+        "PAGE_LOAD_TIMEOUT": 60000, # 60 seconds
+        "SELECTOR_TIMEOUT": 30000, # 30 seconds
+        "NAVIGATION_TIMEOUT": 60000, # 60 seconds
+        "PAGE_SLEEP_DURATION": 3, # 3 seconds to wait on list pages
+        "DETAIL_PAGE_SLEEP_DURATION": 1.5, # 1.5 seconds to wait on detail pages
+        "PAGE_LIMIT": 3 # Set to 0 to crawl all pages, or any number to limit the crawl
+    }
+
+    timestamp = datetime.now().strftime("%Y-%m-%d")
+    print("This script will crawl ITviec job listings with details and save them to a CSV file.")
+    
+    crawled_data_df = crawl_itviec(config)
     
     if not crawled_data_df.empty:
-        print("\n--- Sample of Crawled Job Summaries (First 5 Rows) ---")
+        print("\n--- Sample of Crawled Data (First 5 Rows) ---")
         print(crawled_data_df.head())
         
         try:
-            csv_file_path = f"{time_now}itviec_jobs_summary.csv"
+            csv_file_path = f"{timestamp}_itviec_jobs_detailed.csv"
             crawled_data_df.to_csv(csv_file_path, index=False, encoding='utf-8-sig')
-            print(f"\nSummary data saved to {csv_file_path}")
+            print(f"\nData successfully saved to {csv_file_path}")
         except Exception as e:
             print(f"Error occurred while saving data to CSV: {e}")
     else:

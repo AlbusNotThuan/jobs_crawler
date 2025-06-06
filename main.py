@@ -5,11 +5,12 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 import pandas as pd
 import importlib
+import shutil
 
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from utils.load_config import load_config, validate_required_keys
+from utils.load_config import load_config
 from utils.arg_parser import create_parser
 from utils.colors import Colors
 
@@ -170,6 +171,28 @@ class JobCrawlerManager:
                 print(f"  {col}: {row[col]}")
             print()
 
+    def clear_browser_cache(self, user_data_dir):
+        """Clear browser cache from user data directory."""
+        cache_folders = [
+            'Default/Cache',
+            'Default/Code Cache', 
+            'Default/GPUCache',
+            'Default/Service Worker',
+            'GrShaderCache',
+            'GraphiteDawnCache',
+            'component_crx_cache',
+            'extensions_crx_cache'
+        ]
+
+        for folder in cache_folders:
+            cache_path = os.path.join(user_data_dir, folder)
+            if os.path.exists(cache_path):
+                try:
+                    shutil.rmtree(cache_path)
+                    print(f"✓ Cleared cache: {folder}")
+                except Exception as e:
+                    print(f"✗ Failed to clear {folder}: {e}")
+
 
 def main():
     """Main application entry point."""
@@ -211,6 +234,9 @@ def main():
             print(Colors.cyan("Configuration loaded:"))
             for key, value in config.items():
                 print(f"   {key}: {value}")
+
+        # Clear browser cache
+        manager.clear_browser_cache(config['USER_DATA_DIR'])
         
         # Execute crawling
         df = manager.crawl_site(args.site, config)
