@@ -1,6 +1,6 @@
 # ITviec Crawler Configuration
 BASE_URL: "https://itviec.com"
-SIGN_IN_FLAG: True
+SIGN_IN_FLAG: false
 
 # Browser Configuration
 HEADLESS: false

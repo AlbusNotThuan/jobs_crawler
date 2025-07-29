@@ -232,8 +232,10 @@ def crawl_itviec(config):
                         job_detail_page.wait_for_load_state('domcontentloaded')
                         time.sleep(config["PAGE_SLEEP_DURATION"])
 
-                        salary_locator = job_detail_page.locator(".salary .fw-500")
-                        salary = salary_locator.inner_text().strip() # if salary_locator.count() > 0 else "Not specified"
+                        # salary_locator = job_detail_page.locator(".salary .fw-500")
+                        # salary = salary_locator.inner_text().strip() # if salary_locator.count() > 0 else "Not specified"
+                        salary_locator = job_detail_page.locator(".salary .fw-500").first()
+                        salary = salary_locator.inner_text().strip() if salary_locator.count() > 0 else "Not specified"
                         print(f"    - Salary: {salary}")
                         
                         location_locator = job_detail_page.locator("div.d-inline-block:has(svg.feather-icon.icon-sm.align-middle) > span.normal-text.text-rich-grey")

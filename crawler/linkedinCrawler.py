@@ -2,7 +2,9 @@ from patchright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 import pandas as pd
 import time
 import re
+import os
 import random
+import threading
 from datetime import datetime, timedelta
 import hashlib
 from bs4 import BeautifulSoup
@@ -214,6 +216,50 @@ def extract_job_details(page, job_id, config):
 # We're removing the crawl_linkedin_job_details function since we're directly using
 # extract_job_details from within crawl_linkedin with immediate detail crawling
 
+def analyze_job_async(job_details, job_data_lock):
+    """
+    Phân tích job description bằng AI và cập nhật job_details.
+    Hàm này sẽ được chạy trong một thread riêng.
+    """
+    try:
+        # Import các module cần thiết
+        import os
+        import asyncio
+        import sys
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from utils.analyze_job import analyze_job_content
+
+        # Tạo event loop mới cho thread này
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # Chạy phân tích
+        analysis_result = loop.run_until_complete(analyze_job_content(job_details["Description"]))
+        
+        # Cập nhật thông tin từ phân tích
+        if analysis_result and isinstance(analysis_result, dict):
+            # Khóa để đảm bảo thread safety khi cập nhật
+            with job_data_lock:
+                # Cập nhật skills
+                if "skills" in analysis_result and analysis_result["skills"]:
+                    job_details["Skills"] = ", ".join(analysis_result["skills"])
+                    print(f"  Skills for {job_details['JobID'][:8]}: {job_details['Skills']}")
+                
+                # Cập nhật years of experience
+                if "yoe" in analysis_result and analysis_result["yoe"] != "Not Specified":
+                    job_details["Experience_Requirements"] = analysis_result["yoe"]
+                    print(f"  Experience for {job_details['JobID'][:8]}: {job_details['Experience_Requirements']}")
+                
+                # Cập nhật salary
+                if "salary" in analysis_result and analysis_result["salary"] != "Not Specified":
+                    job_details["Salary"] = analysis_result["salary"]
+                    print(f"  Salary for {job_details['JobID'][:8]}: {job_details['Salary']}")
+        
+        loop.close()
+    except Exception as ai_error:
+        print(f"  Error analyzing job with AI: {ai_error}")
+
+
 def crawl_linkedin(config):
     """
     Crawls job listings from LinkedIn search results page.
@@ -224,6 +270,15 @@ def crawl_linkedin(config):
     JOB_CARD_SELECTOR = "li[data-occludable-job-id]"
     NEXT_PAGE_SELECTOR = "button[aria-label='View next page']"
     LOGIN_INDICATORS = ["form#login", "input[name='session_key']", "button[aria-label='Sign in']"]
+    
+    # Import threading để chạy phân tích AI bất đồng bộ
+    import threading
+    
+    # Tạo lock để đảm bảo thread safety khi cập nhật job_data
+    job_data_lock = threading.Lock()
+    
+    # Danh sách các thread đang chạy
+    analysis_threads = []
     
     START_URL = config['BASE_URL']
     is_logged_in = config.get('IS_LOGGED_IN', False)
@@ -321,7 +376,19 @@ def crawl_linkedin(config):
                             
                             # Extract job details
                             job_details = extract_job_details(detail_page, linkedin_job_id, config)
-                            job_data.append(job_details)
+                            
+                            # Thêm job vào job_data
+                            with job_data_lock:
+                                job_data.append(job_details)
+                            
+                            # Khởi chạy thread phân tích AI nếu có mô tả
+                            if job_details["Description"] != "Not specified" and job_details["Description"] != "Not available":
+                                analysis_thread = threading.Thread(
+                                    target=analyze_job_async,
+                                    args=(job_details, job_data_lock)
+                                )
+                                analysis_thread.start()
+                                analysis_threads.append(analysis_thread)
                             
                         except Exception as detail_error:
                             print(f"  Error processing job detail: {detail_error}")
@@ -360,7 +427,9 @@ def crawl_linkedin(config):
 
                 # --- Pagination ---
                 next_button = page.locator(NEXT_PAGE_SELECTOR)
-                
+                print(next_button)
+                print(f"Next page button count: {next_button.count()}")
+                print(next_button.is_enabled())
                 if next_button.count() > 0 and next_button.is_enabled():
                     print("Clicking next page button...")
                     next_button.click()
@@ -376,6 +445,13 @@ def crawl_linkedin(config):
                 break
         
         browser.close()
+        
+    # Đợi tất cả các thread phân tích AI hoàn thành
+    if analysis_threads:
+        print(f"\nWaiting for {len(analysis_threads)} AI analysis tasks to complete...")
+        for thread in analysis_threads:
+            thread.join()
+        print("All AI analysis tasks completed.")
 
     # Create DataFrame from collected data
     df = pd.DataFrame(job_data)
