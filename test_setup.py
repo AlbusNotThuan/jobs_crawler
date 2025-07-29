@@ -21,8 +21,11 @@ def test_imports():
         from utils.colors import Colors
         print("✓ utils.colors imported successfully")
         
-        from itviecCrawler import crawl_itviec
+        from crawler.itviecCrawler import crawl_itviec
         print("✓ itviecCrawler imported successfully")
+        
+        from crawler.linkedinCrawler import crawl_linkedin
+        print("✓ linkedinCrawler imported successfully")
         
         import main
         print("✓ main module imported successfully")

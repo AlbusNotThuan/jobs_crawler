@@ -9,4 +9,12 @@ sites:
     crawler_module: "itviecCrawler"
     crawler_function: "crawl_itviec"
     enabled: true
+  
+  linkedin:
+    name: "LinkedIn"
+    description: "LinkedIn job search platform"
+    config_file: "config/linkedin_config.yaml"
+    crawler_module: "linkedinCrawler"
+    crawler_function: "crawl_linkedin"
+    enabled: true
 

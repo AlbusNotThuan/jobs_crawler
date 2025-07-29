@@ -32,7 +32,7 @@ class JobCrawlerManager:
                 if site_info.get('enabled', True):
                     # Dynamically import the crawler function
                     try:
-                        module = importlib.import_module(site_info['crawler_module'])
+                        module = importlib.import_module(f"crawler.{site_info['crawler_module']}")
                         crawler_func = getattr(module, site_info['crawler_function'])
                         
                         self.supported_sites[site_id] = {

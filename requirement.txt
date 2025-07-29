@@ -3,3 +3,4 @@ pandas
 ipynb
 ipykernel
 PyYAML
+beautifulsoup4

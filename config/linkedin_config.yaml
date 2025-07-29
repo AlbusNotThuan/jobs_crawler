@@ -1,0 +1,30 @@
+# LinkedIn Crawler Configuration
+BASE_URL: "https://www.linkedin.com/jobs/search/?currentJobId=&distance=25&f_I=96%2C4%2C6%2C1594%2C118%2C3231%2C3130&geoId=104195383"
+
+# Login Configuration
+# Set to true after you've logged in manually once and the session is saved
+IS_LOGGED_IN: false
+
+# Browser Configuration
+# It is highly recommended to run with HEADLESS: false for the first time
+# to handle login and CAPTCHAs manually.
+HEADLESS: false
+USER_DATA_DIR: "./playwright_user_data" # Use a separate user data dir for LinkedIn
+CHANNEL: "chrome"
+NO_VIEWPORT: true
+
+# Timeout Configuration (in milliseconds)
+PAGE_LOAD_TIMEOUT: 30000  # Reduced from 60000 for faster page loads
+SELECTOR_TIMEOUT: 15000   # Reduced from 30000 for faster element detection
+NAVIGATION_TIMEOUT: 20000 # Reduced from 30000 for faster navigation
+PAGE_SLEEP_DURATION: 0.5  # Reduced from 1 for faster crawling
+
+# Pagination Configuration
+PAGE_LIMIT: 5  # Set to 0 for no limit
+
+# Job Detail Configuration
+DETAIL_CRAWL_LIMIT: 0  # Maximum number of job details to crawl (set to 0 for no limit)
+DETAIL_RETRY_ATTEMPTS: 2  # Number of retries if a job detail page fails to load
+DETAIL_SLEEP_MIN: 0.5     # Minimum delay between job crawls (seconds)
+DETAIL_SLEEP_MAX: 1.5     # Maximum delay between job crawls (seconds)
+CRAWL_DETAILS_IMMEDIATELY: true  # Directly go to detail pages when finding job IDs
