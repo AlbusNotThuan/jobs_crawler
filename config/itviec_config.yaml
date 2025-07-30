@@ -23,4 +23,4 @@ PROXIES:
   - "/it-jobs"
 
 # Pagination Configuration
-PAGE_LIMIT: 5  # Set to 0 for no limit
+PAGE_LIMIT: 0  # Set to 0 for no limit

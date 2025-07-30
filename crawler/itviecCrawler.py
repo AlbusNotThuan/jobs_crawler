@@ -223,7 +223,7 @@ def crawl_itviec(config):
 
                     # --- Scrape Job Detail Page ---
                     job_detail_page = browser.new_page()
-                    description, experience, benefits, skills, salary, location = ("Not specified",) * 6
+                    description, experience, benefits, skills, salary, location, job_expertise = ("Not specified",) * 7
                     posted_date = datetime.now().strftime("%Y-%m-%d")  # Default to today
                     job_id = generate_job_hash(title, company, posted_date)  # Default ID
                     
@@ -232,14 +232,19 @@ def crawl_itviec(config):
                         job_detail_page.wait_for_load_state('domcontentloaded')
                         time.sleep(config["PAGE_SLEEP_DURATION"])
 
-                        # salary_locator = job_detail_page.locator(".salary .fw-500")
-                        # salary = salary_locator.inner_text().strip() # if salary_locator.count() > 0 else "Not specified"
-                        salary_locator = job_detail_page.locator(".salary .fw-500").first()
-                        salary = salary_locator.inner_text().strip() if salary_locator.count() > 0 else "Not specified"
+                        salary_locator = job_detail_page.locator(".salary .fw-500")
+                        salary = salary_locator.inner_text().strip() # if salary_locator.count() > 0 else "Not specified"
+                        # salary_locator = job_detail_page.locator(".salary .fw-500").first()
+                        # salary = salary_locator.inner_text().strip() if salary_locator.count() > 0 else "Not specified"
                         print(f"    - Salary: {salary}")
                         
                         location_locator = job_detail_page.locator("div.d-inline-block:has(svg.feather-icon.icon-sm.align-middle) > span.normal-text.text-rich-grey")
                         location = location_locator.inner_text().strip() if location_locator.count() > 0 else "Not specified"
+                        
+                        # Extract Job Expertise
+                        job_expertise_locator = job_detail_page.locator("div.imb-4.imb-xl-3.d-flex:has(div:has-text('Job Expertise:')) a.itag")
+                        job_expertise = job_expertise_locator.inner_text().strip() if job_expertise_locator.count() > 0 else "Not specified"
+                        print(f"    - Job Expertise: {job_expertise}")
                         
                         # Extract posted date using the specific selector for the clock icon element
                         posted_date_locator = job_detail_page.locator("div.d-inline-block:has(svg.feather-icon[href$='#clock']) > span.text-rich-grey")
@@ -331,6 +336,7 @@ def crawl_itviec(config):
                         "Salary": salary,
                         "Location": location,
                         "Posted_Date": posted_date,
+                        "Job_Expertise": job_expertise,
                         "Skills": ", ".join(skills) if skills else "Not specified",
                         "Benefits": benefits,
                         "Description": description,
