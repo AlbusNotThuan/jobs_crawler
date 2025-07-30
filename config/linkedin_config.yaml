@@ -1,5 +1,5 @@
 # LinkedIn Crawler Configuration
-BASE_URL: "https://www.linkedin.com/jobs/search/?currentJobId=&distance=25&f_I=96%2C4%2C6%2C1594%2C118%2C3231%2C3130&geoId=104195383"
+BASE_URL: "https://www.linkedin.com/jobs/search/?currentJobId=&distance=25&f_I=96%2C4%2C6%2C1594%2C3231%2C118%2C3130&f_TPR=r604800&geoId=104195383&origin=JOB_SEARCH_PAGE_JOB_FILTER&sortBy=DD"
 
 # Login Configuration
 # Set to true after you've logged in manually once and the session is saved
@@ -20,7 +20,7 @@ NAVIGATION_TIMEOUT: 20000 # Reduced from 30000 for faster navigation
 PAGE_SLEEP_DURATION: 0.5  # Reduced from 1 for faster crawling
 
 # Pagination Configuration
-PAGE_LIMIT: 5  # Set to 0 for no limit
+PAGE_LIMIT: 0  # Set to 0 for no limit
 
 # Job Detail Configuration
 DETAIL_CRAWL_LIMIT: 0  # Maximum number of job details to crawl (set to 0 for no limit)

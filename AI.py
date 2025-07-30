@@ -10,7 +10,7 @@ import json
 import re
 import asyncio
 
-with open(r"C:\Users\Dang\Desktop\jobs_crawler\instruction.md", "r", encoding="utf-8") as f:
+with open(os.path.join(os.path.dirname(__file__), "instruction.md"), "r", encoding="utf-8") as f:
     instruction_content = f.read()
 
 async def analyze_job_content(content: str) -> dict:
