@@ -147,6 +147,7 @@ def extract_job_details(page, job_id, config):
         "Salary": "Not specified",
         "Location": "Not specified",
         "Posted_Date": datetime.now().strftime("%Y-%m-%d"),
+        "Job_Expertise": "Not specified",  # Added to match itviecCrawler
         "Skills": "Not specified",
         "Benefits": "Not specified",
         "Description": "Not specified",
@@ -400,6 +401,7 @@ def crawl_linkedin(config):
                                 "Salary": "Not specified",
                                 "Location": "Not specified",
                                 "Posted_Date": datetime.now().strftime("%Y-%m-%d"),
+                                "Job_Expertise": "Not specified", 
                                 "Skills": "Not specified",
                                 "Benefits": "Not specified",
                                 "Description": "Not specified",
