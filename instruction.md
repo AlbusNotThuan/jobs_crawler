@@ -38,7 +38,7 @@ Given the job description (JD), you must extract the following elements:
 
 #### 4. **Job Expertise**
 - Classify the job's primary area of expertise based on the job title and the overall context of the description.
-- Choose the single most relevant tag from the predefined list below.
+- Choose the single most relevant tag from the predefined list below. If there aren't any tag that perfectly match what the job is, label it appropriately.
 - This is about the domain of the job (e.g., "Cybersecurity"), not a specific tool (e.g., "Nmap").
 
 **Job Expertise Tag List:**
@@ -73,7 +73,7 @@ You must return the result in **exactly** the following JSON structure. Do not a
 
 ###  Important Rules
 
-* Do **not** hallucinate or invent information.
+* Do **not** hallucinate or invent information except where you are instructed to do so.
 * Do **not** use general domain knowledge to fill in missing data.
 * If any required field is **not present in the JD**, return `"Not Specified"`.
 * **Always return output in valid, parsable JSON format as above.**

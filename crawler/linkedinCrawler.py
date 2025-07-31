@@ -8,6 +8,9 @@ import threading
 from datetime import datetime, timedelta
 import hashlib
 from bs4 import BeautifulSoup
+import sys
+
+
 
 # Helper functions for job detail page crawling
 def parse_posted_time(posted_text, current_date=None):
@@ -151,7 +154,7 @@ def extract_job_details(page, job_id, config):
         "Skills": "Not specified",
         "Benefits": "Not specified",
         "Description": "Not specified",
-        "Experience_Requirements": "Not specified",
+        "Experience": "Not specified",
         "Link": f"https://www.linkedin.com/jobs/view/{job_id}/"
     }
     
@@ -223,19 +226,16 @@ def analyze_job_async(job_details, job_data_lock):
     Hàm này sẽ được chạy trong một thread riêng.
     """
     try:
-        # Import các module cần thiết
-        import os
         import asyncio
         import sys
         sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         from utils.analyze_job import analyze_job_content
-
         # Tạo event loop mới cho thread này
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
         # Chạy phân tích
-        analysis_result = loop.run_until_complete(analyze_job_content(job_details["Description"]))
+        analysis_result = loop.run_until_complete(analyze_job_content(job_details["Description"], job_details["Title"]))
         
         # Cập nhật thông tin từ phân tích
         if analysis_result and isinstance(analysis_result, dict):
@@ -248,13 +248,18 @@ def analyze_job_async(job_details, job_data_lock):
                 
                 # Cập nhật years of experience
                 if "yoe" in analysis_result and analysis_result["yoe"] != "Not Specified":
-                    job_details["Experience_Requirements"] = analysis_result["yoe"]
-                    print(f"  Experience for {job_details['JobID'][:8]}: {job_details['Experience_Requirements']}")
-                
+                    job_details["Experience"] = analysis_result["yoe"]
+                    print(f"  Experience for {job_details['JobID'][:8]}: {job_details['Experience']}")
+
                 # Cập nhật salary
                 if "salary" in analysis_result and analysis_result["salary"] != "Not Specified":
                     job_details["Salary"] = analysis_result["salary"]
                     print(f"  Salary for {job_details['JobID'][:8]}: {job_details['Salary']}")
+
+                # Job expertise
+                if "job_expertise" in analysis_result and analysis_result["job_expertise"] != "Not Specified":
+                    job_details["Job_Expertise"] = analysis_result["job_expertise"]
+                    print(f"  Job Expertise for {job_details['JobID'][:8]}: {job_details['Job_Expertise']}")
         
         loop.close()
     except Exception as ai_error:
@@ -405,7 +410,7 @@ def crawl_linkedin(config):
                                 "Skills": "Not specified",
                                 "Benefits": "Not specified",
                                 "Description": "Not specified",
-                                "Experience_Requirements": "Not specified",
+                                "Experience": "Not specified",
                                 "Link": job_view_url
                             })
                             
@@ -454,6 +459,34 @@ def crawl_linkedin(config):
         for thread in analysis_threads:
             thread.join()
         print("All AI analysis tasks completed.")
+    
+    # Insert analyzed jobs into database
+    if job_data:
+        try:
+            print(f"\n💾 Inserting {len(job_data)} analyzed jobs into database...")
+            # Import the database inserter
+            import sys
+            sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            from utils.job_database_inserter import JobDatabaseInserter
+            
+            # Create inserter and insert jobs
+            inserter = JobDatabaseInserter()
+            stats = inserter.insert_job_batch(job_data)
+            
+            # Show database statistics
+            db_stats = inserter.get_database_stats()
+            print(f"\n📊 Final database statistics:")
+            print(f"   Total jobs in database: {db_stats.get('total_jobs', 0)}")
+            print(f"   Total skills: {db_stats.get('total_skills', 0)}")
+            print(f"   Job-skill relationships: {db_stats.get('total_relationships', 0)}")
+            
+            if 'by_expertise' in db_stats:
+                print(f"   Jobs by expertise: {db_stats['by_expertise']}")
+            
+            inserter.close_connection()
+            
+        except Exception as db_error:
+            print(f"Error inserting jobs into database: {db_error}")
 
     # Create DataFrame from collected data
     df = pd.DataFrame(job_data)

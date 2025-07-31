@@ -42,20 +42,21 @@ def format_skill_tags(tags):
         result += f"- {tag}\n"
     return result
 
-async def analyze_job_content(content: str) -> dict:
+async def analyze_job_content(content: str, job_title: str = "") -> dict:
     """
-    Hàm bất đồng bộ, nhận vào string content JD, trả về dict JSON kết quả phân tích.
+    Hàm bất đồng bộ, nhận vào string content JD và job title, trả về dict JSON kết quả phân tích.
     
     Args:
         content (str): Nội dung mô tả công việc cần phân tích
+        job_title (str): Tiêu đề công việc (tùy chọn)
         
     Returns:
         dict: Dictionary chứa thông tin về skills, yoe, salary được trích xuất
     """
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _analyze_job_content_sync, content)
+    return await loop.run_in_executor(None, _analyze_job_content_sync, content, job_title)
 
-def _analyze_job_content_sync(content: str) -> dict:
+def _analyze_job_content_sync(content: str, job_title: str = "") -> dict:
     """
     Hàm đồng bộ để gọi API Gemini và xử lý kết quả.
     Không nên gọi trực tiếp - hãy dùng analyze_job_content thay thế.
@@ -69,11 +70,16 @@ def _analyze_job_content_sync(content: str) -> dict:
     max_retries = len(api_key_manager.api_keys)
     retries = 0
     
+    # Combine job title and content for better analysis
+    combined_content = content
+    if job_title.strip():
+        combined_content = f"Job Title: {job_title.strip()}\n\nJob Description:\n{content}"
+    
     # Thêm danh sách skill tags vào nội dung gửi đi nếu có
     if skill_tags:
-        content_with_tags = content + format_skill_tags(skill_tags)
+        content_with_tags = combined_content + format_skill_tags(skill_tags)
     else:
-        content_with_tags = content
+        content_with_tags = combined_content
     
     text = None
     
@@ -186,6 +192,7 @@ if __name__ == "__main__":
                 content = f.read()
         else:
             # Demo content
+            job_title = "DevOps Engineer"
             content = """
             Giới thiệu việc làm: DevOps Engineer
             
@@ -202,7 +209,7 @@ if __name__ == "__main__":
             Must be fluent in English for team communication.
             """
         
-        result = await analyze_job_content(content)
+        result = await analyze_job_content(content, job_title)
         print(json.dumps(result, indent=2, ensure_ascii=False))
     
     asyncio.run(main())

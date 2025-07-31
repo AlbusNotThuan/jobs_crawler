@@ -4,6 +4,12 @@ import time
 import re
 from datetime import datetime, timedelta
 import hashlib
+import os
+import sys
+
+# Import the logger
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from utils.logger import get_itviec_logger
 
 def parse_posted_time(posted_text, current_date=None):
     """

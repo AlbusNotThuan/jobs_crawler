@@ -16,11 +16,11 @@ try:
     cur = conn.cursor()
 
     # Example: Execute a query
-    cur.execute("SELECT * FROM skill")
-    skills = cur.fetchall()
-    print("Skills in the database:")
-    for skill in skills:
-        print(" -", skill)
+    cur.execute("SELECT * FROM job")
+    jobs = cur.fetchall()
+    print("Jobs in the database:")
+    for job in jobs:
+        print(" -", job)
 
     # Close the cursor and connection
     cur.close()

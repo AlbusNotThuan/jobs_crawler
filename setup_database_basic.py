@@ -32,7 +32,7 @@ def create_tables_and_populate_skills():
                 salary VARCHAR(255),
                 location VARCHAR(255),
                 posted_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-                yoe INT,
+                yoe VARCHAR(255),
                 work_type VARCHAR(50)
             );
         """)
