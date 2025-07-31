@@ -10,6 +10,9 @@ import hashlib
 from bs4 import BeautifulSoup
 import sys
 
+# Add parent directory to path for imports
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
 
 
 # Helper functions for job detail page crawling
@@ -114,8 +117,17 @@ def generate_job_hash(title, company, posted_date=None):
     # Generate SHA-256 hash
     return hashlib.sha256(job_string.encode('utf-8')).hexdigest()
 
-def clean_html(html_content):
-    """Remove HTML tags and clean up description text."""
+def clean_html(html_content, logger=None):
+    """
+    Remove HTML tags and clean up description text.
+    
+    Args:
+        html_content (str): HTML content to clean
+        logger (logging.Logger, optional): Logger instance
+        
+    Returns:
+        str: Cleaned text content
+    """
     if not html_content or html_content == "Not available":
         return "Not available"
         
@@ -127,10 +139,13 @@ def clean_html(html_content):
         # Normalize whitespace
         return re.sub(r'\s+', ' ', text).strip()
     except Exception as e:
-        print(f"Error cleaning HTML: {e}")
+        if logger:
+            logger.error(f"Error cleaning HTML: {e}")
+        else:
+            print(f"Error cleaning HTML: {e}")
         return html_content  # Return original if parsing fails
 
-def extract_job_details(page, job_id, config):
+def extract_job_details(page, job_id, config, logger=None):
     """
     Extract detailed job information from a LinkedIn job detail page.
     
@@ -138,10 +153,12 @@ def extract_job_details(page, job_id, config):
         page: Playwright page object
         job_id: LinkedIn job ID
         config: Configuration dictionary
+        logger (logging.Logger, optional): Logger instance
         
     Returns:
         dict: Job details including title, company, location, posted date, and description
     """
+    
     # Initialize job details with standard fields
     job_details = {
         "JobID": job_id,
@@ -167,13 +184,19 @@ def extract_job_details(page, job_id, config):
         title_element = page.locator(".job-details-jobs-unified-top-card__job-title h1")
         if title_element.count() > 0:
             job_details["Title"] = title_element.inner_text().strip()
-            print(f"  Title: {job_details['Title']}")
+            if logger:
+                logger.info(f"  Title: {job_details['Title']}")
+            else:
+                print(f"  Title: {job_details['Title']}")
         
         # Extract company name
         company_element = page.locator(".job-details-jobs-unified-top-card__company-name a")
         if company_element.count() > 0:
             job_details["Company"] = company_element.inner_text().strip()
-            print(f"  Company: {job_details['Company']}")
+            if logger:
+                logger.info(f"  Company: {job_details['Company']}")
+            else:
+                print(f"  Company: {job_details['Company']}")
         
         # Extract location and posted time
         tertiary_desc = page.locator(".job-details-jobs-unified-top-card__tertiary-description-container span.tvm__text")
@@ -187,9 +210,15 @@ def extract_job_details(page, job_id, config):
                 text = element.inner_text().strip()
                 if any(time_indicator in text.lower() for time_indicator in ["ago", "hour", "day", "week", "month"]):
                     job_details["Posted_Date"] = parse_posted_time(text)
-                    print(f"  Posted Date: {text} → {job_details['Posted_Date']}")
+                    if logger:
+                        logger.info(f"  Posted Date: {text} → {job_details['Posted_Date']}")
+                    else:
+                        print(f"  Posted Date: {text} → {job_details['Posted_Date']}")
                 elif "people clicked apply" in text.lower():
-                    print(f"  Apply Count: {text}")
+                    if logger:
+                        logger.info(f"  Apply Count: {text}")
+                    else:
+                        print(f"  Apply Count: {text}")
         
         # Extract job description
         description_element = page.locator(".jobs-description__content .jobs-box__html-content")
@@ -199,18 +228,27 @@ def extract_job_details(page, job_id, config):
             
             # Show preview
             desc_preview = job_details["Description"][:100].replace("\n", " ") + "..."
-            print(f"  Description: {desc_preview}")
+            if logger:
+                logger.info(f"  Description: {desc_preview}")
+            else:
+                print(f"  Description: {desc_preview}")
         
         # Generate unique job ID hash
         if job_details["Title"] != "Not specified" and job_details["Company"] != "Not specified":
             unique_job_id = generate_job_hash(job_details["Title"], job_details["Company"], job_details["Posted_Date"])
             job_details["JobID"] = unique_job_id
-            print(f"  Generated Job ID: {unique_job_id[:8]}...")
+            if logger:
+                logger.info(f"  Generated Job ID: {unique_job_id[:8]}...")
+            else:
+                print(f"  Generated Job ID: {unique_job_id[:8]}...")
         
         return job_details
     
     except Exception as e:
-        print(f"  Error extracting job details for job ID {job_id}: {e}")
+        if logger:
+            logger.error(f"  Error extracting job details for job ID {job_id}: {e}")
+        else:
+            print(f"  Error extracting job details for job ID {job_id}: {e}")
         try:
             page.screenshot(path=f"error_job_details_{job_id}.png")
         except:
@@ -220,10 +258,15 @@ def extract_job_details(page, job_id, config):
 # We're removing the crawl_linkedin_job_details function since we're directly using
 # extract_job_details from within crawl_linkedin with immediate detail crawling
 
-def analyze_job_async(job_details, job_data_lock):
+def analyze_job_async(job_details, job_data_lock, logger=None):
     """
     Phân tích job description bằng AI và cập nhật job_details.
     Hàm này sẽ được chạy trong một thread riêng.
+    
+    Args:
+        job_details (dict): Job details dictionary to update
+        job_data_lock (threading.Lock): Lock for thread-safe updates
+        logger (logging.Logger, optional): Logger instance
     """
     try:
         import asyncio
@@ -244,34 +287,60 @@ def analyze_job_async(job_details, job_data_lock):
                 # Cập nhật skills
                 if "skills" in analysis_result and analysis_result["skills"]:
                     job_details["Skills"] = ", ".join(analysis_result["skills"])
-                    print(f"  Skills for {job_details['JobID'][:8]}: {job_details['Skills']}")
+                    if logger:
+                        logger.info(f"  Skills for {job_details['JobID'][:8]}: {job_details['Skills']}")
+                    else:
+                        print(f"  Skills for {job_details['JobID'][:8]}: {job_details['Skills']}")
                 
                 # Cập nhật years of experience
                 if "yoe" in analysis_result and analysis_result["yoe"] != "Not Specified":
                     job_details["Experience"] = analysis_result["yoe"]
-                    print(f"  Experience for {job_details['JobID'][:8]}: {job_details['Experience']}")
+                    if logger:
+                        logger.info(f"  Experience for {job_details['JobID'][:8]}: {job_details['Experience']}")
+                    else:
+                        print(f"  Experience for {job_details['JobID'][:8]}: {job_details['Experience']}")
 
                 # Cập nhật salary
                 if "salary" in analysis_result and analysis_result["salary"] != "Not Specified":
                     job_details["Salary"] = analysis_result["salary"]
-                    print(f"  Salary for {job_details['JobID'][:8]}: {job_details['Salary']}")
+                    if logger:
+                        logger.info(f"  Salary for {job_details['JobID'][:8]}: {job_details['Salary']}")
+                    else:
+                        print(f"  Salary for {job_details['JobID'][:8]}: {job_details['Salary']}")
 
                 # Job expertise
                 if "job_expertise" in analysis_result and analysis_result["job_expertise"] != "Not Specified":
                     job_details["Job_Expertise"] = analysis_result["job_expertise"]
-                    print(f"  Job Expertise for {job_details['JobID'][:8]}: {job_details['Job_Expertise']}")
+                    if logger:
+                        logger.info(f"  Job Expertise for {job_details['JobID'][:8]}: {job_details['Job_Expertise']}")
+                    else:
+                        print(f"  Job Expertise for {job_details['JobID'][:8]}: {job_details['Job_Expertise']}")
         
         loop.close()
     except Exception as ai_error:
-        print(f"  Error analyzing job with AI: {ai_error}")
+        if logger:
+            logger.error(f"  Error analyzing job with AI: {ai_error}")
+        else:
+            print(f"  Error analyzing job with AI: {ai_error}")
 
 
-def crawl_linkedin(config):
+def crawl_linkedin(config, logger=None, db_inserter=None):
     """
     Crawls job listings from LinkedIn search results page.
     Extracts job IDs from the search page and immediately navigates to each job detail page
     to collect detailed information.
+    
+    Args:
+        config (dict): Configuration dictionary
+        logger (logging.Logger, optional): Logger instance. If None, uses default print statements
+        db_inserter (JobDatabaseInserter, optional): Database inserter instance for saving data to database
     """
+    # Initialize logger if not provided
+    from utils.logger import CrawlerLogger
+    if logger is None:
+        crawler_logger = CrawlerLogger()
+        logger = crawler_logger.get_linkedin_logger()
+        
     # Selectors for LinkedIn job search page
     JOB_CARD_SELECTOR = "li[data-occludable-job-id]"
     NEXT_PAGE_SELECTOR = "button[aria-label='View next page']"
@@ -288,6 +357,9 @@ def crawl_linkedin(config):
     
     START_URL = config['BASE_URL']
     is_logged_in = config.get('IS_LOGGED_IN', False)
+    
+    logger.info(f"Starting LinkedIn crawler with {config.get('PAGE_LIMIT', 'unlimited')} page limit")
+    logger.info(f"Base URL: {START_URL}")
 
     with sync_playwright() as p:
         browser = p.chromium.launch_persistent_context(
@@ -300,7 +372,7 @@ def crawl_linkedin(config):
 
         page = browser.new_page()
         try:
-            print(f"Navigating to LinkedIn jobs: {START_URL}")
+            logger.info(f"Navigating to LinkedIn jobs: {START_URL}")
             page.goto(START_URL, timeout=config["PAGE_LOAD_TIMEOUT"])
             
             # Check if login is required
@@ -311,27 +383,27 @@ def crawl_linkedin(config):
                     break
             
             if login_required and not is_logged_in:
-                print("Login required! Please log in manually. You have 60 seconds...")
+                logger.warning("Login required! Please log in manually. You have 60 seconds...")
                 time.sleep(60)
                 # Check again after login attempt
                 for login_selector in LOGIN_INDICATORS:
                     if page.locator(login_selector).count() > 0:
-                        print("Still showing login page. Please ensure you're logged in.")
+                        logger.error("Still showing login page. Please ensure you're logged in.")
                         page.screenshot(path="linkedin_login_required.png")
                         browser.close()
                         return pd.DataFrame()
             elif is_logged_in:
-                print("Using existing login session...")
+                logger.info("Using existing login session...")
                 time.sleep(3)  # Short wait for page to load
             else:
-                print("No login required, proceeding...")
+                logger.info("No login required, proceeding...")
                 time.sleep(3)
 
             # Wait for job cards to load
-            print("Waiting for job cards to load...")
+            logger.info("Waiting for job cards to load...")
             page.wait_for_selector(JOB_CARD_SELECTOR, timeout=config["SELECTOR_TIMEOUT"], state="visible")
         except Exception as e:
-            print(f"Error loading the initial page or job cards: {e}")
+            logger.error(f"Error loading the initial page or job cards: {e}")
             page.screenshot(path="error_linkedin_initial_load.png")
             browser.close()
             return pd.DataFrame()
@@ -343,18 +415,18 @@ def crawl_linkedin(config):
 
         while True:
             if max_pages != 0 and current_page_num > max_pages:
-                print(f"Reached page limit ({max_pages}). Ending crawl.")
+                logger.info(f"Reached page limit ({max_pages}). Ending crawl.")
                 break
 
-            print(f"Crawling search results page {current_page_num}...")
+            logger.info(f"Crawling search results page {current_page_num}...")
             
             try:
                 # Get all job cards on current page
                 job_cards = page.locator(JOB_CARD_SELECTOR).all()
-                print(f"Found {len(job_cards)} job cards on page {current_page_num}.")
+                logger.info(f"Found {len(job_cards)} job cards on page {current_page_num}.")
 
                 if not job_cards:
-                    print("No job cards found on this page. Ending crawl.")
+                    logger.warning("No job cards found on this page. Ending crawl.")
                     break
 
                 for i, job_card in enumerate(job_cards):
@@ -370,7 +442,7 @@ def crawl_linkedin(config):
                         
                         # Create job view URL and navigate to detail page
                         job_view_url = f"https://www.linkedin.com/jobs/view/{linkedin_job_id}/"
-                        print(f"  Processing job {i+1}/{len(job_cards)}: ID={linkedin_job_id}")
+                        logger.info(f"  Processing job {i+1}/{len(job_cards)}: ID={linkedin_job_id}")
                         
                         # Open detail page in new tab
                         detail_page = browser.new_page()
@@ -381,7 +453,7 @@ def crawl_linkedin(config):
                             time.sleep(config.get("PAGE_SLEEP_DURATION", 3))
                             
                             # Extract job details
-                            job_details = extract_job_details(detail_page, linkedin_job_id, config)
+                            job_details = extract_job_details(detail_page, linkedin_job_id, config, logger)
                             
                             # Thêm job vào job_data
                             with job_data_lock:
@@ -391,13 +463,13 @@ def crawl_linkedin(config):
                             if job_details["Description"] != "Not specified" and job_details["Description"] != "Not available":
                                 analysis_thread = threading.Thread(
                                     target=analyze_job_async,
-                                    args=(job_details, job_data_lock)
+                                    args=(job_details, job_data_lock, logger)
                                 )
                                 analysis_thread.start()
                                 analysis_threads.append(analysis_thread)
                             
                         except Exception as detail_error:
-                            print(f"  Error processing job detail: {detail_error}")
+                            logger.error(f"  Error processing job detail: {detail_error}")
                             # Add basic placeholder information
                             job_data.append({
                                 "JobID": linkedin_job_id,
@@ -427,27 +499,27 @@ def crawl_linkedin(config):
                                 config.get("DETAIL_SLEEP_MIN", 0.5), 
                                 config.get("DETAIL_SLEEP_MAX", 1.5)
                             ), 2)
-                            print(f"  Waiting {delay} seconds before next job...")
+                            logger.info(f"  Waiting {delay} seconds before next job...")
                             time.sleep(delay)
                     except Exception as e:
-                        print(f"  Error extracting job ID {i+1}: {e}")
+                        logger.error(f"  Error extracting job ID {i+1}: {e}")
 
                 # --- Pagination ---
                 next_button = page.locator(NEXT_PAGE_SELECTOR)
-                print(next_button)
-                print(f"Next page button count: {next_button.count()}")
-                print(next_button.is_enabled())
+                logger.debug(f"Next page button: {next_button}")
+                logger.info(f"Next page button count: {next_button.count()}")
+                logger.debug(f"Next page button enabled: {next_button.is_enabled()}")
                 if next_button.count() > 0 and next_button.is_enabled():
-                    print("Clicking next page button...")
+                    logger.info("Clicking next page button...")
                     next_button.click()
                     time.sleep(config['PAGE_SLEEP_DURATION'])
                     current_page_num += 1
                 else:
-                    print("No 'Next page' button found or it's disabled. Ending crawl.")
+                    logger.info("No 'Next page' button found or it's disabled. Ending crawl.")
                     break
                     
             except Exception as e:
-                print(f"Error on page {current_page_num}: {e}")
+                logger.error(f"Error on page {current_page_num}: {e}")
                 page.screenshot(path=f"error_linkedin_page_{current_page_num}.png")
                 break
         
@@ -455,15 +527,15 @@ def crawl_linkedin(config):
         
     # Đợi tất cả các thread phân tích AI hoàn thành
     if analysis_threads:
-        print(f"\nWaiting for {len(analysis_threads)} AI analysis tasks to complete...")
+        logger.info(f"\nWaiting for {len(analysis_threads)} AI analysis tasks to complete...")
         for thread in analysis_threads:
             thread.join()
-        print("All AI analysis tasks completed.")
+        logger.info("All AI analysis tasks completed.")
     
     # Insert analyzed jobs into database
     if job_data:
         try:
-            print(f"\n💾 Inserting {len(job_data)} analyzed jobs into database...")
+            logger.info(f"\n💾 Inserting {len(job_data)} analyzed jobs into database...")
             # Import the database inserter
             import sys
             sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -475,30 +547,41 @@ def crawl_linkedin(config):
             
             # Show database statistics
             db_stats = inserter.get_database_stats()
-            print(f"\n📊 Final database statistics:")
-            print(f"   Total jobs in database: {db_stats.get('total_jobs', 0)}")
-            print(f"   Total skills: {db_stats.get('total_skills', 0)}")
-            print(f"   Job-skill relationships: {db_stats.get('total_relationships', 0)}")
+            logger.info(f"\n📊 Final database statistics:")
+            logger.info(f"   Total jobs in database: {db_stats.get('total_jobs', 0)}")
+            logger.info(f"   Total skills: {db_stats.get('total_skills', 0)}")
+            logger.info(f"   Job-skill relationships: {db_stats.get('total_relationships', 0)}")
             
             if 'by_expertise' in db_stats:
-                print(f"   Jobs by expertise: {db_stats['by_expertise']}")
+                logger.info(f"   Jobs by expertise: {db_stats['by_expertise']}")
             
             inserter.close_connection()
             
         except Exception as db_error:
-            print(f"Error inserting jobs into database: {db_error}")
+            logger.error(f"Error inserting jobs into database: {db_error}")
 
     # Create DataFrame from collected data
     df = pd.DataFrame(job_data)
     if df.empty:
-        print("\nNo job data was successfully crawled.")
+        logger.warning("\nNo job data was successfully crawled.")
     else:
-        print(f"\nSuccessfully crawled {len(df)} unique jobs from {current_page_num - 1} page(s).")
+        logger.info(f"\nSuccessfully crawled {len(df)} unique jobs from {current_page_num - 1} page(s).")
     return df
 
 if __name__ == '__main__':
     from utils.load_config import load_config
     import os
+    import sys
+    sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+    from utils.logger import CrawlerLogger
+    
+    # Setup paths
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    output_dir = os.path.join(project_root, "output")
+    
+    # Initialize logger
+    crawler_logger = CrawlerLogger()
+    logger = crawler_logger.get_linkedin_logger()
     
     # Load configuration from YAML file
     current_dir = os.path.dirname(os.path.realpath(__file__))
@@ -507,20 +590,20 @@ if __name__ == '__main__':
     try:
         # Load configuration and set defaults
         config = load_config(config_path)
-        print("Loaded LinkedIn crawler configuration")
+        logger.info("Loaded LinkedIn crawler configuration")
         
         # Default configuration values
         defaults = {
             "IS_LOGGED_IN": False,
             "USER_DATA_DIR": "./playwright_user_data",
             "CHANNEL": "chrome",
-            "HEADLESS": False,
+            "HEADLESS": False,  # Set default to False (not headless)
             "NO_VIEWPORT": True,
             "PAGE_LOAD_TIMEOUT": 60000,
             "SELECTOR_TIMEOUT": 30000,
             "NAVIGATION_TIMEOUT": 30000,
             "PAGE_SLEEP_DURATION": 3,
-            "PAGE_LIMIT": 2,
+            "PAGE_LIMIT": 2,    # Default to 2 pages
             "DETAIL_SLEEP_MIN": 0.5,
             "DETAIL_SLEEP_MAX": 1.5
         }
@@ -530,29 +613,42 @@ if __name__ == '__main__':
             if key not in config:
                 config[key] = value
                 
+        # Ensure output directory exists
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            logger.info(f"Created output directory: {output_dir}")
+        
+        # Log configuration
+        logger.info(f"Configuration: PAGE_LIMIT={config['PAGE_LIMIT']}, HEADLESS={config['HEADLESS']}")
+                
         # Run the crawler
-        print("Crawling LinkedIn job listings with details...")
-        crawled_data_df = crawl_linkedin(config)
+        logger.info("Crawling LinkedIn job listings with details...")
+        crawled_data_df = crawl_linkedin(config, logger)
         
         if not crawled_data_df.empty:
             # Display sample of crawled data
-            print("\n--- Sample of Crawled Data (First 5 Rows) ---")
+            logger.info("\n--- Sample of Crawled Data (First 5 Rows) ---")
             sample_columns = ['JobID', 'Title', 'Company', 'Location', 'Posted_Date']
             sample_df = crawled_data_df[sample_columns].head(5) if all(col in crawled_data_df.columns for col in sample_columns) else crawled_data_df.head(5)
             for _, row in sample_df.iterrows():
                 if 'JobID' in row and 'Title' in row and 'Company' in row:
-                    print(f"  {row['JobID'][:8]}... | {row['Title']} | {row['Company']}")
+                    logger.info(f"  {row['JobID'][:8]}... | {row['Title']} | {row['Company']}")
                 else:
-                    print(row)
+                    logger.info(f"  {row}")
             
             # Save data to CSV
             timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-            csv_file_path = f"output/{timestamp}_linkedin_jobs.csv"
+            output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "output")
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+                
+            csv_file_path = os.path.join(output_dir, f"{timestamp}_linkedin_jobs.csv")
             crawled_data_df.to_csv(csv_file_path, index=False, encoding='utf-8-sig')
-            print(f"\nData successfully saved to {csv_file_path}")
+            logger.info(f"\nData successfully saved to {csv_file_path}")
+            
         else:
-            print("No data was crawled to display or save.")
+            logger.warning("No data was crawled to display")
     
     except Exception as e:
-        print(f"Error: {e}")
-        print("Crawler execution failed.")
+        logger.error(f"Error: {e}")
+        logger.error("Crawler execution failed.")

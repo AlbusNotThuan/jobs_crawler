@@ -7,9 +7,8 @@ import hashlib
 import os
 import sys
 
-# Import the logger
+# Add parent directory to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from utils.logger import get_itviec_logger
 
 def parse_posted_time(posted_text, current_date=None):
     """
@@ -154,16 +153,29 @@ def generate_job_hash(title, company, posted_date=None):
     job_hash = hashlib.sha256(job_string.encode('utf-8')).hexdigest()
     return job_hash
 
-def crawl_itviec(config):
+def crawl_itviec(config, logger=None):
     """
     Crawls job listings from ITviec, including detail pages for each job,
     and handles pagination.
+    
+    Args:
+        config (dict): Configuration dictionary
+        logger (logging.Logger, optional): Logger instance. If None, uses default print statements
     """
+    # Initialize logger if not provided
+    from utils.logger import CrawlerLogger
+    if logger is None:
+        crawler_logger = CrawlerLogger()
+        logger = crawler_logger.get_itviec_logger()
+    
     # Selectors are defined here for clarity
     JOB_CARD_SELECTOR = ".card-jobs-list .job-card"
     NEXT_PAGE_SELECTOR = "div.page.next > a[rel='next']"
     
     START_URL = f"{config['BASE_URL']}/it-jobs"
+
+    logger.info(f"Starting ITviec crawler with {config['PAGE_LIMIT']} page limit")
+    logger.info(f"Base URL: {config['BASE_URL']}")
 
     with sync_playwright() as p:
         browser = p.chromium.launch_persistent_context(
@@ -175,11 +187,11 @@ def crawl_itviec(config):
 
         main_page = browser.new_page()
         try:
-            print(f"Navigating to initial page: {START_URL}")
+            logger.info(f"Navigating to initial page: {START_URL}")
             main_page.goto(START_URL, timeout=config["PAGE_LOAD_TIMEOUT"])
             main_page.wait_for_selector(JOB_CARD_SELECTOR, timeout=config["SELECTOR_TIMEOUT"], state="visible") 
         except Exception as e:
-            print(f"Error loading main page or finding initial job items: {e}")
+            logger.error(f"Error loading main page or finding initial job items: {e}")
             main_page.screenshot(path="error_initial_load.png")
             browser.close()
             return pd.DataFrame()
@@ -189,24 +201,24 @@ def crawl_itviec(config):
 
         while True:
             if config['PAGE_LIMIT'] != 0 and current_page_num > config['PAGE_LIMIT']:
-                print(f"Reached page limit ({config['PAGE_LIMIT']}). Ending crawl.")
+                logger.info(f"Reached page limit ({config['PAGE_LIMIT']}). Ending crawl.")
                 break
 
-            print(f"Crawling search results page {current_page_num}...")
+            logger.info(f"Crawling search results page {current_page_num}...")
             try:
                 main_page.wait_for_selector(JOB_CARD_SELECTOR, timeout=config["SELECTOR_TIMEOUT"], state="visible")
                 time.sleep(config["PAGE_SLEEP_DURATION"]) 
             except Exception as e:
-                print(f"Error waiting for content on page {current_page_num}: {e}")
+                logger.error(f"Error waiting for content on page {current_page_num}: {e}")
                 main_page.screenshot(path=f"error_page_{current_page_num}_load.png")
                 break 
 
             job_elements_locators = main_page.locator(JOB_CARD_SELECTOR)
             count_on_page = job_elements_locators.count()
-            print(f"Found {count_on_page} job cards on page {current_page_num}.")
+            logger.info(f"Found {count_on_page} job cards on page {current_page_num}.")
 
             if count_on_page == 0:
-                print("No more job cards found. Ending crawl.")
+                logger.info("No more job cards found. Ending crawl.")
                 break
 
             for i in range(count_on_page):
@@ -221,11 +233,11 @@ def crawl_itviec(config):
                     # Get the URL to the job detail page
                     job_page_url_raw = title_element.get_attribute("data-url") if title_element.count() > 0 else None
                     if not job_page_url_raw:
-                        print(f"  Skipping job '{title}' due to missing link.")
+                        logger.warning(f"  Skipping job '{title}' due to missing link.")
                         continue
                     job_page_url = job_page_url_raw.split("?")[0]
                     
-                    print(f"  Processing job {i+1}/{count_on_page}: {title}")
+                    logger.info(f"  Processing job {i+1}/{count_on_page}: {title}")
 
                     # --- Scrape Job Detail Page ---
                     job_detail_page = browser.new_page()
@@ -242,7 +254,7 @@ def crawl_itviec(config):
                         salary = salary_locator.inner_text().strip() # if salary_locator.count() > 0 else "Not specified"
                         # salary_locator = job_detail_page.locator(".salary .fw-500").first()
                         # salary = salary_locator.inner_text().strip() if salary_locator.count() > 0 else "Not specified"
-                        print(f"    - Salary: {salary}")
+                        logger.info(f"    - Salary: {salary}")
                         
                         location_locator = job_detail_page.locator("div.d-inline-block:has(svg.feather-icon.icon-sm.align-middle) > span.normal-text.text-rich-grey")
                         location = location_locator.inner_text().strip() if location_locator.count() > 0 else "Not specified"
@@ -250,7 +262,7 @@ def crawl_itviec(config):
                         # Extract Job Expertise
                         job_expertise_locator = job_detail_page.locator("div.imb-4.imb-xl-3.d-flex:has(div:has-text('Job Expertise:')) a.itag")
                         job_expertise = job_expertise_locator.inner_text().strip() if job_expertise_locator.count() > 0 else "Not specified"
-                        print(f"    - Job Expertise: {job_expertise}")
+                        logger.info(f"    - Job Expertise: {job_expertise}")
                         
                         # Extract posted date using the specific selector for the clock icon element
                         posted_date_locator = job_detail_page.locator("div.d-inline-block:has(svg.feather-icon[href$='#clock']) > span.text-rich-grey")
@@ -258,11 +270,11 @@ def crawl_itviec(config):
                         
                         # Parse the posted date text into a standardized date format
                         posted_date = parse_posted_time(posted_date_text)
-                        print(f"    - Posted Date: {posted_date_text} → {posted_date}")
+                        logger.info(f"    - Posted Date: {posted_date_text} → {posted_date}")
                         
                         # Generate unique job ID using title, company and posted date
                         job_id = generate_job_hash(title, company, posted_date)
-                        print(f"    - Job ID: {job_id[:8]}...")  # Print first 8 chars of the hash
+                        logger.info(f"    - Job ID: {job_id[:8]}...")  # Print first 8 chars of the hash
                         
                         # Find the div containing "Skills:" and get the tags from the next sibling div
                         skills_container = job_detail_page.locator("div.d-flex.flex-wrap.igap-2:near(div:has-text('Skills:'))")
@@ -330,7 +342,7 @@ def crawl_itviec(config):
                             benefits = "Not specified"
 
                     except Exception as e_detail:
-                        print(f"    - Error processing detail page {job_page_url}: {e_detail}")
+                        logger.error(f"    - Error processing detail page {job_page_url}: {e_detail}")
                         job_detail_page.screenshot(path=f"error_detail_page_{current_page_num}_{i+1}.png")
                     finally:
                         job_detail_page.close()
@@ -351,63 +363,135 @@ def crawl_itviec(config):
                     })
                     
                 except Exception as e_job_item:
-                    print(f"  - Error processing a job card on page {current_page_num}, index {i+1}: {e_job_item}")
+                    logger.error(f"  - Error processing a job card on page {current_page_num}, index {i+1}: {e_job_item}")
 
             # --- Pagination ---
-            print(f"\nChecking for next page link...")
+            logger.info(f"Checking for next page link...")
             next_page_locator = main_page.locator(NEXT_PAGE_SELECTOR)
             
             if next_page_locator.count() > 0 and next_page_locator.is_visible():
                 next_page_href = next_page_locator.get_attribute("href")
                 if next_page_href:
                     next_page_url_full = f"{config['BASE_URL']}{next_page_href}"
-                    print(f"Navigating to next page: {next_page_url_full}")
+                    logger.info(f"Navigating to next page: {next_page_url_full}")
                     main_page.goto(next_page_url_full, timeout=config["NAVIGATION_TIMEOUT"])
                     current_page_num += 1
                 else:
-                    print("Next page link found but 'href' is missing. Ending crawl.")
+                    logger.info("Next page link found but 'href' is missing. Ending crawl.")
                     break
             else:
-                print("No 'Next page' link found. Ending crawl.")
+                logger.info("No 'Next page' link found. Ending crawl.")
                 break
         
         browser.close()
 
     df = pd.DataFrame(job_data)
     if df.empty:
-        print("\nNo job data was successfully crawled.")
+        logger.warning("No job data was successfully crawled.")
     else:
-        print(f"\nSuccessfully crawled {len(df)} unique jobs from {current_page_num -1} page(s).")
+        logger.info(f"Successfully crawled {len(df)} unique jobs from {current_page_num -1} page(s).")
     return df
 
 if __name__ == '__main__':
-    # Configuration dictionary to make the script easy to manage
+    import argparse
+    import os
+    import sys
+    from utils.logger import CrawlerLogger
+    from utils.job_database_inserter import JobDatabaseInserter
+
+    # Setup argument parser
+    parser = argparse.ArgumentParser(description='Crawl ITviec job listings')
+    parser.add_argument('--pages', type=int, default=3, help='Number of pages to crawl (0 for all)')
+    parser.add_argument('--headless', action='store_true', help='Run in headless mode')
+    parser.add_argument('--save-to-db', action='store_true', help='Save crawled data to database')
+    parser.add_argument('--output-dir', type=str, default='output', help='Directory to save CSV files')
+    args = parser.parse_args()
+    
+    # Setup logger
+    crawler_logger = CrawlerLogger()
+    logger = crawler_logger.get_itviec_logger()
+    
+    # Ensure output directory exists
+    if not os.path.exists(args.output_dir):
+        os.makedirs(args.output_dir)
+        logger.info(f"Created output directory: {args.output_dir}")
+
+    # Configuration dictionary
     config = {
         "BASE_URL": "https://itviec.com",
         "USER_DATA_DIR": "./playwright_user_data",
-        "HEADLESS": False, # Set to True for production/unattended runs
+        "HEADLESS": args.headless,
         "PAGE_LOAD_TIMEOUT": 60000, # 60 seconds
         "SELECTOR_TIMEOUT": 30000, # 30 seconds
         "NAVIGATION_TIMEOUT": 60000, # 60 seconds
         "PAGE_SLEEP_DURATION": 3, # 3 seconds to wait on list pages
         "DETAIL_PAGE_SLEEP_DURATION": 1.5, # 1.5 seconds to wait on detail pages
-        "PAGE_LIMIT": 3 # Set to 0 to crawl all pages, or any number to limit the crawl
+        "PAGE_LIMIT": args.pages # Set to 0 to crawl all pages
     }
 
-    timestamp = datetime.now().strftime("%Y-%m-%d")
-    print("This script will crawl ITviec job listings with details and save them to a CSV file.")
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    logger.info("Starting ITviec crawler with the following configuration:")
+    for key, value in config.items():
+        logger.info(f"  {key}: {value}")
     
-    crawled_data_df = crawl_itviec(config)
+    # Initialize database connection if needed
+    db_inserter = None
+    if args.save_to_db:
+        try:
+            logger.info("Initializing database connection...")
+            db_inserter = JobDatabaseInserter()
+            logger.info("Database connection established successfully")
+        except Exception as e:
+            logger.error(f"Failed to connect to database: {e}")
+            logger.info("Continuing without database support")
+            args.save_to_db = False
+    
+    # Run the crawler
+    crawled_data_df = crawl_itviec(config, logger)
     
     if not crawled_data_df.empty:
-        print("\n--- Sample of Crawled Data (First 5 Rows) ---")
-        print(crawled_data_df.head())
+        logger.info(f"Successfully crawled {len(crawled_data_df)} jobs")
+        logger.info("--- Sample of Crawled Data (First 5 Rows) ---")
         
+        # Save to CSV
         try:
-            csv_file_path = f"{timestamp}_itviec_jobs_detailed.csv"
+            csv_file_path = os.path.join(args.output_dir, f"{timestamp}_itviec_jobs.csv")
             crawled_data_df.to_csv(csv_file_path, index=False, encoding='utf-8-sig')
-            print(f"\nData successfully saved to {csv_file_path}")
+            logger.info(f"Data successfully saved to {csv_file_path}")
         except Exception as e:
-            print(f"Error occurred while saving data to CSV: {e}")
+            logger.error(f"Error saving data to CSV: {e}")
+        
+        # Save to database if requested
+        if args.save_to_db and db_inserter:
+            logger.info("Saving data to database...")
+            job_count = 0
+            total_skills = 0
+            
+            try:
+                for _, job in crawled_data_df.iterrows():
+                    job_dict = job.to_dict()
+                    db_job_id = db_inserter.insert_job(job_dict)
+                    
+                    if db_job_id:
+                        job_count += 1
+                        skills_count = db_inserter.insert_job_skills(db_job_id, job_dict.get("Skills", ""))
+                        total_skills += skills_count
+                
+                # Commit all changes
+                db_inserter.conn.commit()
+                logger.info(f"Successfully saved {job_count} jobs with {total_skills} skills to database")
+                
+                # Get database stats
+                stats = db_inserter.get_database_stats()
+                logger.info(f"Database now contains {stats.get('total_jobs', 0)} jobs and {stats.get('total_skills', 0)} skills")
+                
+            except Exception as e:
+                logger.error(f"Error saving to database: {e}")
+                if db_inserter and db_inserter.conn:
+                    db_inserter.conn.rollback()
+                    
+            finally:
+                if db_inserter:
+                    db_inserter.close_connection()
     else:
-        print("No data was crawled to display or save.")
+        logger.warning("No data was crawled to display or save.")
