@@ -436,6 +436,7 @@ def crawl_linkedin(config, logger=None, db_inserter=None):
                         
                         # Skip if no ID or duplicate
                         if not linkedin_job_id or linkedin_job_id in seen_job_ids:
+                            logger.info(f"  Skipping job card {i+1} with ID {linkedin_job_id} (duplicate or missing ID)")
                             continue
                         
                         seen_job_ids.add(linkedin_job_id)
