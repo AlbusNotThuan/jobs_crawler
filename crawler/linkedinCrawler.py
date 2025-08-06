@@ -129,7 +129,7 @@ def clean_html(html_content, logger=None):
         str: Cleaned text content
     """
     if not html_content or html_content == "Not available":
-        return "Not available"
+        return ""
         
     try:
         # Use BeautifulSoup to extract text from HTML
@@ -161,18 +161,21 @@ def extract_job_details(page, job_id, config, logger=None):
     
     # Initialize job details with standard fields
     job_details = {
-        "JobID": job_id,
-        "Title": "Not specified",
-        "Company": "Not specified",
-        "Salary": "Not specified",
-        "Location": "Not specified",
-        "Posted_Date": datetime.now().strftime("%Y-%m-%d"),
-        "Job_Expertise": "Not specified",  # Added to match itviecCrawler
-        "Skills": "Not specified",
-        "Benefits": "Not specified",
-        "Description": "Not specified",
-        "Experience": "Not specified",
-        "Link": f"https://www.linkedin.com/jobs/view/{job_id}/"
+        "job_id": job_id,
+        "job_title": None,
+        "company": None,
+        "salary": None,
+        "location": None,
+        "posted_date": datetime.now().strftime("%Y-%m-%d"),
+        "job_expertise": None,
+        "skills": None,
+        "benefits": None,
+        "job_description": None,
+        "experience": None,
+        "yoe": None,
+        "work_type": None,
+        "link": f"https://www.linkedin.com/jobs/view/{job_id}/",
+        "raw_job_description": None,
     }
     
     try:
@@ -183,65 +186,67 @@ def extract_job_details(page, job_id, config, logger=None):
         # Extract job title
         title_element = page.locator(".job-details-jobs-unified-top-card__job-title h1")
         if title_element.count() > 0:
-            job_details["Title"] = title_element.inner_text().strip()
+            job_details["job_title"] = title_element.inner_text().strip()
             if logger:
-                logger.info(f"  Title: {job_details['Title']}")
+                logger.info(f"  Title: {job_details['job_title']}")
             else:
-                print(f"  Title: {job_details['Title']}")
-        
+                print(f"  Title: {job_details['job_title']}")
+
         # Extract company name
         company_element = page.locator(".job-details-jobs-unified-top-card__company-name a")
         if company_element.count() > 0:
-            job_details["Company"] = company_element.inner_text().strip()
+            job_details["company"] = company_element.inner_text().strip()
             if logger:
-                logger.info(f"  Company: {job_details['Company']}")
+                logger.info(f"  Company: {job_details['company']}")
             else:
-                print(f"  Company: {job_details['Company']}")
-        
+                print(f"  Company: {job_details['company']}")
+
         # Extract location and posted time
         tertiary_desc = page.locator(".job-details-jobs-unified-top-card__tertiary-description-container span.tvm__text")
         if tertiary_desc.count() > 0:
             # First element is typically location
             if tertiary_desc.first.count() > 0:
-                job_details["Location"] = tertiary_desc.first.inner_text().strip()
-            
+                job_details["location"] = tertiary_desc.first.inner_text().strip()
+
             # Look for posted date and apply count
             for element in tertiary_desc.all():
                 text = element.inner_text().strip()
                 if any(time_indicator in text.lower() for time_indicator in ["ago", "hour", "day", "week", "month"]):
-                    job_details["Posted_Date"] = parse_posted_time(text)
+                    job_details["posted_date"] = parse_posted_time(text)
                     if logger:
-                        logger.info(f"  Posted Date: {text} → {job_details['Posted_Date']}")
+                        logger.info(f"  Posted Date: {text} → {job_details['posted_date']}")
                     else:
-                        print(f"  Posted Date: {text} → {job_details['Posted_Date']}")
+                        print(f"  Posted Date: {text} → {job_details['posted_date']}")
                 elif "people clicked apply" in text.lower():
                     if logger:
                         logger.info(f"  Apply Count: {text}")
                     else:
                         print(f"  Apply Count: {text}")
         
-        # Extract job description
+        # Extract raw job description
         description_element = page.locator(".jobs-description__content .jobs-box__html-content")
         if description_element.count() > 0:
             html_description = description_element.inner_html().strip()
-            job_details["Description"] = clean_html(html_description)
-            
+            job_details["raw_job_description"] = clean_html(html_description)
+
             # Show preview
-            desc_preview = job_details["Description"][:100].replace("\n", " ") + "..."
+            desc_preview = job_details["raw_job_description"][:100].replace("\n", " ") + "..."
             if logger:
-                logger.info(f"  Description: {desc_preview}")
+                logger.info(f"  RAW Job Description: {desc_preview}")
             else:
-                print(f"  Description: {desc_preview}")
-        
+                print(f"  RAW Job Description: {desc_preview}")
+
         # Generate unique job ID hash
-        if job_details["Title"] != "Not specified" and job_details["Company"] != "Not specified":
-            unique_job_id = generate_job_hash(job_details["Title"], job_details["Company"], job_details["Posted_Date"])
-            job_details["JobID"] = unique_job_id
+        if job_details["job_title"] != None and job_details["company"] != None:
+            unique_job_id = generate_job_hash(job_details["job_title"], job_details["company"], job_details["posted_date"])
+            job_details["job_id"] = unique_job_id
             if logger:
                 logger.info(f"  Generated Job ID: {unique_job_id[:8]}...")
             else:
                 print(f"  Generated Job ID: {unique_job_id[:8]}...")
-        
+
+        # Store original LinkedIn ID for reference
+        job_details['linkedin_id'] = job_id  
         return job_details
     
     except Exception as e:
@@ -277,45 +282,66 @@ def analyze_job_async(job_details, job_data_lock, logger=None):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         
-        # Chạy phân tích
-        analysis_result = loop.run_until_complete(analyze_job_content(job_details["Description"], job_details["Title"]))
-        
+        # Run LLM extraction
+        analysis_result = loop.run_until_complete(analyze_job_content(job_details["raw_job_description"], job_details["job_title"]))
+
         # Cập nhật thông tin từ phân tích
         if analysis_result and isinstance(analysis_result, dict):
             # Khóa để đảm bảo thread safety khi cập nhật
             with job_data_lock:
-                # Cập nhật skills
-                if "skills" in analysis_result and analysis_result["skills"]:
-                    job_details["Skills"] = ", ".join(analysis_result["skills"])
+                # Update job_description
+                if "job_description" in analysis_result and analysis_result["job_description"] != "Not Specified":
+                    job_details["job_description"] = analysis_result["job_description"]
                     if logger:
-                        logger.info(f"  Skills for {job_details['JobID'][:8]}: {job_details['Skills']}")
+                        logger.info(f"  Job Description: {job_details['job_description'][:100]}...")
                     else:
-                        print(f"  Skills for {job_details['JobID'][:8]}: {job_details['Skills']}")
-                
-                # Cập nhật years of experience
-                if "yoe" in analysis_result and analysis_result["yoe"] != "Not Specified":
-                    job_details["Experience"] = analysis_result["yoe"]
+                        print(f"  Job Description: {job_details['job_description'][:100]}...")
+
+                # Update job requirements
+                if "job_requirements" in analysis_result and analysis_result["job_requirements"] != "Not Specified":
+                    job_details["Job_Requirements"] = analysis_result["job_requirements"]
                     if logger:
-                        logger.info(f"  Experience for {job_details['JobID'][:8]}: {job_details['Experience']}")
+                        logger.info(f"  Job Requirements: {job_details['Job_Requirements'][:100]}...")
                     else:
-                        print(f"  Experience for {job_details['JobID'][:8]}: {job_details['Experience']}")
+                        print(f"  Job Requirements: {job_details['Job_Requirements'][:100]}...")
+
+                # Update years of experience
+                if "yoe" in analysis_result and analysis_result["yoe"] != None:
+                    job_details["yoe"] = analysis_result["yoe"]
+                    if logger:
+                        logger.info(f"  Experience for {job_details['job_id'][:8]}: {job_details['yoe']}")
+                    else:
+                        print(f"  Experience for {job_details['job_id'][:8]}: {job_details['yoe']}")
 
                 # Cập nhật salary
-                if "salary" in analysis_result and analysis_result["salary"] != "Not Specified":
-                    job_details["Salary"] = analysis_result["salary"]
+                if "salary" in analysis_result and analysis_result["salary"] != None:
+                    job_details["salary"] = analysis_result["salary"]
                     if logger:
-                        logger.info(f"  Salary for {job_details['JobID'][:8]}: {job_details['Salary']}")
+                        logger.info(f"  Salary for {job_details['job_id'][:8]}: {job_details['salary']}")
                     else:
-                        print(f"  Salary for {job_details['JobID'][:8]}: {job_details['Salary']}")
+                        print(f"  Salary for {job_details['job_id'][:8]}: {job_details['salary']}")
 
                 # Job expertise
-                if "job_expertise" in analysis_result and analysis_result["job_expertise"] != "Not Specified":
-                    job_details["Job_Expertise"] = analysis_result["job_expertise"]
+                if "job_expertise" in analysis_result and analysis_result["job_expertise"] != None:
+                    job_details["job_expertise"] = analysis_result["job_expertise"]
                     if logger:
-                        logger.info(f"  Job Expertise for {job_details['JobID'][:8]}: {job_details['Job_Expertise']}")
+                        logger.info(f"  Job Expertise for {job_details['job_id'][:8]}: {job_details['job_expertise']}")
                     else:
-                        print(f"  Job Expertise for {job_details['JobID'][:8]}: {job_details['Job_Expertise']}")
-        
+                        print(f"  Job Expertise for {job_details['job_id'][:8]}: {job_details['job_expertise']}")
+                # Update company information
+                if "company_information" in analysis_result and analysis_result["company_information"] != None:
+                    job_details["company_information"] = analysis_result["company_information"]
+                    if logger:
+                        logger.info(f"  Company Description for {job_details['job_id'][:8]}: {job_details['company_information'][:100]}...")
+                    else:
+                        print(f"  Company Description for {job_details['job_id'][:8]}: {job_details['company_information'][:100]}...")
+
+                # store temporary embedding
+                if "job_requirements_embedding" in analysis_result:
+                    job_details["job_requirements_embedding"] = analysis_result["job_requirements_embedding"]
+                if "requirements_embedding" in analysis_result:
+                    job_details["requirements_embedding"] = analysis_result["requirements_embedding"]
+
         loop.close()
     except Exception as ai_error:
         if logger:
@@ -461,7 +487,7 @@ def crawl_linkedin(config, logger=None, db_inserter=None):
                                 job_data.append(job_details)
                             
                             # Khởi chạy thread phân tích AI nếu có mô tả
-                            if job_details["Description"] != "Not specified" and job_details["Description"] != "Not available":
+                            if job_details["raw_job_description"] != None:
                                 analysis_thread = threading.Thread(
                                     target=analyze_job_async,
                                     args=(job_details, job_data_lock, logger)
@@ -473,18 +499,25 @@ def crawl_linkedin(config, logger=None, db_inserter=None):
                             logger.error(f"  Error processing job detail: {detail_error}")
                             # Add basic placeholder information
                             job_data.append({
-                                "JobID": linkedin_job_id,
-                                "Title": "Error retrieving details",
-                                "Company": "Not specified",
-                                "Salary": "Not specified",
-                                "Location": "Not specified",
-                                "Posted_Date": datetime.now().strftime("%Y-%m-%d"),
-                                "Job_Expertise": "Not specified", 
-                                "Skills": "Not specified",
-                                "Benefits": "Not specified",
-                                "Description": "Not specified",
-                                "Experience": "Not specified",
-                                "Link": job_view_url
+                                "job_id": linkedin_job_id,
+                                "job_title": None,
+                                "company": None,
+                                "salary": None,
+                                "location": None,
+                                "posted_date": datetime.now().strftime("%Y-%m-%d"),
+                                "job_expertise": None,
+                                "skills": None,
+                                "benefits": None,
+                                "job_description": None,
+                                "link": job_view_url,
+                                "raw_job_description": None,
+                                "linkedin_id": linkedin_job_id,
+                                "yoe": None,
+                                "job_requirements": None,
+                                "work_type": None,
+                                "company_information": None,
+                                "job_requirements_embedding": None,
+                                "requirements_embedding": None
                             })
                             
                             try:
@@ -563,6 +596,7 @@ def crawl_linkedin(config, logger=None, db_inserter=None):
 
     # Create DataFrame from collected data
     df = pd.DataFrame(job_data)
+    df.drop(columns=['job_description_embedding', 'job_requirements_embedding'], inplace=True, errors='ignore')
     if df.empty:
         logger.warning("\nNo job data was successfully crawled.")
     else:
