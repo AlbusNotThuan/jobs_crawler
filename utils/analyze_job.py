@@ -126,7 +126,7 @@ def _analyze_job_content_sync(content: str, job_title: str = "") -> dict:
         try:
             result = json.loads(json_str)
             required_keys = [
-                "company_infomation",
+                "company_description",
                 "job_description",
                 "job_requirements",
                 "yoe",
@@ -158,7 +158,7 @@ def _analyze_job_content_sync(content: str, job_title: str = "") -> dict:
     else:
         print("Không tìm thấy JSON hợp lệ trong output!")
         return {
-            "company_infomation": None,
+            "company_description": None,
             "job_description": None,
             "job_requirements": None,
             "yoe": None,

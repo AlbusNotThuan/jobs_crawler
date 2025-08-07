@@ -113,8 +113,8 @@ class AsyncJobAnalyzer:
         
         try:
                 # Extract basic info
-                job_title = job_data.get('Title', '')
-                company = job_data.get('Company', '')
+                job_title = job_data.get('job_title', '')
+                company = job_data.get('company_name', '')
                 
                 # Check for duplicates
                 if self.is_duplicate(job_title, company):
@@ -127,7 +127,7 @@ class AsyncJobAnalyzer:
                 self._log(f"  Job {job_index}: Analyzing - {job_title[:50]}...")
                 
                 # Prepare content for analysis
-                description = job_data.get('Description', '')
+                description = job_data.get('raw_job_description', '')
                 if not description.strip():
                     self._log(f"  Job {job_index}: Warning - No description available", level="warning")
                     description = f"Job title: {job_title}"

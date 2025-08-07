@@ -18,11 +18,13 @@ class JobDatabaseInserter:
         self.cur = None
         self.existing_job_ids: Set[str] = set()
         self.companies_cache: Dict[str, str] = {}  # company_name -> company_id
+        self.existing_web_ids: Set[str] = set()  # For LinkedIn jobs
         self.logger = logger  # Logger instance (if provided)
         self.connect_to_database()
         self.load_existing_job_ids()
         self.load_companies_cache()
-    
+        self.load_existing_web_ids()
+
     def connect_to_database(self):
         """Connect to the PostgreSQL database."""
         try:
@@ -60,6 +62,17 @@ class JobDatabaseInserter:
         except Exception as e:
             self._log(f"Error loading existing job IDs: {e}", level="error")
             self.existing_job_ids = set()
+
+    def load_existing_web_ids(self):
+        """Load all existing web IDs from the database to check for LinkedIn job duplicates."""
+        try:
+            self.cur.execute("SELECT web_id FROM job")
+            rows = self.cur.fetchall()
+            self.existing_web_ids = {str(row[0]) for row in rows}
+            self._log(f"Loaded {len(self.existing_web_ids)} existing web IDs")
+        except Exception as e:
+            self._log(f"Error loading existing web IDs: {e}", level="error")
+            self.existing_web_ids = set()
     
     def load_companies_cache(self):
         """Load existing companies from the database."""
@@ -71,11 +84,12 @@ class JobDatabaseInserter:
         except Exception as e:
             self._log(f"Error loading companies cache: {e}", level="error")
             self.companies_cache = {}
-    
-    def is_duplicate_job(self, job_id: str) -> bool:
+
+    def is_duplicate_job(self, job_id: str, web_id: str) -> bool:
         """Check if a job ID already exists in the database."""
-        return str(job_id) in self.existing_job_ids
-    
+        return (str(job_id) in self.existing_job_ids or
+                str(web_id) in self.existing_web_ids)
+
     def _generate_company_id(self, company_name: str) -> str:
         """Generate a unique company ID based on company name."""
         import hashlib
@@ -143,14 +157,15 @@ class JobDatabaseInserter:
         """
         try:
             import random, time
-            job_id_hash = str(job_data.get("JobID", ""))
-            if self.is_duplicate_job(job_id_hash):
-                self._log(f"  Skipping duplicate job: {job_id_hash[:8]}...")
+            job_id_hash = str(job_data.get("job_id", ""))
+            web_id = str(job_data.get("web_id", ""))
+            if self.is_duplicate_job(job_id_hash, web_id):
+                self._log(f"  [Job ID hash check] Skipping duplicate job: {job_id_hash[:8]}...")
                 return "duplication"
 
             # Get or create company
-            company_name = job_data.get("Company", "Unknown Company")
-            company_description = job_data.get("company_infomation", None)
+            company_name = job_data.get("company_name", "Unknown Company")
+            company_description = job_data.get("company_description", None)
             company_id = self.get_or_create_company(company_name, company_description)
             
             # Insert job record
@@ -158,34 +173,41 @@ class JobDatabaseInserter:
                 INSERT INTO job (
                     job_id, job_title, job_expertise, yoe, salary, location, 
                     posted_date, requirements, requirements_embedding, 
-                    description, description_embedding, company_id
+                    description, description_embedding, web_id, company_id
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             
             # Convert embeddings to proper format if they exist
             requirements_embedding = job_data.get("job_requirements_embedding")
             description_embedding = job_data.get("job_description_embedding")
             
+            # Handle None or empty embeddings - convert to None for pgvector
+            if not requirements_embedding or requirements_embedding == "[]":
+                requirements_embedding = None
+            if not description_embedding or description_embedding == "[]":
+                description_embedding = None
+            
             values = (
                 job_id_hash,  # Use hash as job_id
-                job_data.get("Title", ""),
-                job_data.get("job_expertise", ""),
-                job_data.get("yoe", ""),
-                job_data.get("Salary", ""),
-                job_data.get("Location", ""),
-                job_data.get("Posted_Date", datetime.now(timezone.utc)),
-                job_data.get("job_requirements", ""),
+                job_data.get("job_title", None),
+                job_data.get("job_expertise", None),
+                job_data.get("yoe", None),
+                job_data.get("salary", None),
+                job_data.get("location", None),
+                job_data.get("posted_date", datetime.now(timezone.utc)),
+                job_data.get("job_requirements", None),
                 requirements_embedding,  # pgvector will handle the list
-                job_data.get("job_description", ""),
+                job_data.get("job_description", None),
                 description_embedding,  # pgvector will handle the list
-                company_id
+                job_data.get("web_id", None),
+                company_id,
             )
             
             self.cur.execute(insert_query, values)
             self.conn.commit()  # Ensure changes are saved
             self.existing_job_ids.add(job_id_hash)
-            self._log(f"  ✓ Inserted job: {job_id_hash[:8]} - {job_data.get('Title', 'Unknown')[:50]}")
+            self._log(f"  ✓ Inserted job: {job_id_hash[:8]} - {job_data.get('job_title', 'Unknown')[:50]}")
             
             # Add random sleep between 0.2 and 1.2 seconds
             time.sleep(random.uniform(0.2, 1.2))
@@ -217,10 +239,11 @@ class JobDatabaseInserter:
         for i, job_data in enumerate(job_data_list, 1):
             try:
                 job_id = job_data.get("job_id", f"unknown_{i}")
+                web_id = job_data.get("web_id", "")
                 self._log(f"  Processing {i}/{stats['total']}: {job_id[:8]}...")
                 
                 # Check for duplicate
-                if self.is_duplicate_job(str(job_id)):
+                if self.is_duplicate_job(str(job_id), str(web_id)):
                     stats["duplicates"] += 1
                     self._log(f"    ⚠ Duplicate job skipped")
                     continue

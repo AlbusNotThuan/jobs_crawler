@@ -65,19 +65,18 @@ class JobCSVExporter:
         
         # Map and filter the data
         field_mapping = {
-            'job_id': job_data.get('job_id', ''),
-            'job_title': job_data.get('job_title', job_data.get('Title', '')),
-            'company_name': job_data.get('company_name', job_data.get('Company', '')),
-            'salary': job_data.get('salary', job_data.get('Salary', '')),
-            'location': job_data.get('location', job_data.get('Location', '')),
-            'posted_date': job_data.get('posted_date', job_data.get('Posted_Date', '')),
-            'job_expertise': job_data.get('job_expertise', job_data.get('Job_Expertise', '')),
-            'yoe': job_data.get('yoe', job_data.get('Experience', '')),
-            'work_type': job_data.get('work_type', ''),
-            'job_requirements': job_data.get('job_requirements', job_data.get('requirements', '')),
-            'job_description': job_data.get('job_description', job_data.get('Description', '')),
-            'company_id': job_data.get('company_id', ''),
-            'company_description': job_data.get('company_description', job_data.get('company_infomation', ''))
+            'job_id': job_data.get('job_id', None),
+            'job_title': job_data.get('job_title', None),
+            'company_name': job_data.get('company_name', None),
+            'salary': job_data.get('salary', None),
+            'location': job_data.get('location', None),
+            'posted_date': job_data.get('posted_date', None),
+            'job_expertise': job_data.get('job_expertise', None),
+            'yoe': job_data.get('yoe', None),
+            'work_type': job_data.get('work_type', None),
+            'job_requirements': job_data.get('job_requirements', None),
+            'job_description': job_data.get('job_description', None),
+            'company_description': job_data.get('company_description', None)
         }
         
         # Only include non-vector columns
