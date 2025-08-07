@@ -455,6 +455,10 @@ def crawl_linkedin(config, logger=None, db_inserter=None):
                     logger.warning("No job cards found on this page. Ending crawl.")
                     break
 
+                # Batch size processing each page
+                batch_job_data = []
+                
+
                 for i, job_card in enumerate(job_cards):
                     try:
                         # Extract LinkedIn job ID
