@@ -532,29 +532,6 @@ def crawl_linkedin(config, logger=None, db_inserter=None):
                             
                         except Exception as detail_error:
                             logger.error(f"  Error processing job detail: {detail_error}")
-                            # Add basic placeholder information to page batch
-                            placeholder_job = {
-                                "job_id": linkedin_job_id,
-                                "job_title": None,
-                                "company_name": None,
-                                "salary": None,
-                                "location": None,
-                                "posted_date": datetime.now().strftime("%Y-%m-%d"),
-                                "job_expertise": None,
-                                "job_description": None,
-                                "job_requirements": None,
-                                "link": job_view_url,
-                                "raw_job_description": None,
-                                "linkedin_job_id": linkedin_job_id,
-                                "yoe": None,
-                                "work_type": None,
-                                "company_information": None,
-                                "job_requirements_embedding": None,
-                                "requirements_embedding": None,
-                                "web_id": f"linkedin_{linkedin_job_id}"
-                            }
-                            with job_data_lock:
-                                page_job_data.append(placeholder_job)
                         finally:
                             # Close detail page
                             detail_page.close()
